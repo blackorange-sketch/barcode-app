@@ -5,8 +5,7 @@ const ASSETS = [
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
-  'https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.5/JsBarcode.all.min.js',
-  'https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js'
+  './JsBarcode.all.min.js'
 ];
 
 self.addEventListener('install', e => {
