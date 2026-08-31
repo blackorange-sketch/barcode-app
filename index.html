@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Barcode 128</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#111214">
+<style>
+  :root{
+    --bg:#111214;
+    --surface:#1b1c1f;
+    --surface2:#232427;
+    --text:#f2f2f0;
+    --muted:#8a8d93;
+    --accent:#e8e6df;
+    --danger:#d97a6c;
+    --radius:16px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    display:flex;
+    flex-direction:column;
+    min-height:100vh;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  header{
+    padding:20px 20px 8px;
+  }
+  header h1{
+    font-size:19px;
+    font-weight:600;
+    margin:0;
+    letter-spacing:.2px;
+  }
+  main{
+    flex:1;
+    padding:12px 20px 100px;
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+    overflow-y:auto;
+  }
+  .card{
+    background:var(--surface);
+    border-radius:var(--radius);
+    padding:18px;
+  }
+  textarea{
+    width:100%;
+    background:var(--surface2);
+    border:none;
+    border-radius:12px;
+    color:var(--text);
+    font-size:16px;
+    padding:14px;
+    resize:none;
+    min-height:52px;
+    font-family:inherit;
+    outline:none;
+  }
+  textarea::placeholder{color:var(--muted);}
+  .row{display:flex; gap:10px; margin-top:12px;}
+  button{
+    border:none;
+    border-radius:12px;
+    padding:13px 16px;
+    font-size:15px;
+    font-weight:600;
+    cursor:pointer;
+    flex:1;
+    transition:opacity .15s;
+  }
+  button:active{opacity:.65;}
+  .btn-primary{background:var(--accent); color:#161616;}
+  .btn-secondary{background:var(--surface2); color:var(--text);}
+  .btn-danger{background:transparent; color:var(--danger);}
+  #barcode-wrap{
+    background:#fff;
+    border-radius:12px;
+    padding:16px 8px;
+    display:none;
+    overflow-x:auto;
+    text-align:center;
+  }
+  #barcode-wrap.show{display:block;}
+  #barcode-wrap svg{max-width:100%;}
+  .section-title{
+    font-size:13px;
+    text-transform:uppercase;
+    letter-spacing:.6px;
+    color:var(--muted);
+    margin:4px 2px 10px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .hist-item{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:12px 4px;
+    border-bottom:1px solid var(--surface2);
+    gap:10px;
+  }
+  .hist-item:last-child{border-bottom:none;}
+  .hist-text{
+    font-size:15px;
+    word-break:break-all;
+    flex:1;
+  }
+  .hist-time{
+    font-size:11px;
+    color:var(--muted);
+    display:block;
+    margin-top:2px;
+  }
+  .hist-actions{display:flex; gap:8px; flex-shrink:0;}
+  .icon-btn{
+    background:var(--surface2);
+    border:none;
+    color:var(--text);
+    width:34px;
+    height:34px;
+    border-radius:9px;
+    font-size:15px;
+    cursor:pointer;
+    flex:none;
+  }
+  .empty{color:var(--muted); font-size:14px; text-align:center; padding:16px 0;}
+
+  /* Scanner overlay */
+  #scan-overlay{
+    position:fixed; inset:0;
+    background:#000;
+    display:none;
+    flex-direction:column;
+    z-index:50;
+  }
+  #scan-overlay.show{display:flex;}
+  #scan-video{
+    flex:1;
+    width:100%;
+    object-fit:cover;
+  }
+  .scan-bar{
+    position:absolute;
+    top:0; left:0; right:0;
+    padding:16px 16px calc(16px + env(safe-area-inset-top));
+    padding-top:calc(16px + env(safe-area-inset-top));
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    background:linear-gradient(rgba(0,0,0,.6),transparent);
+  }
+  .scan-bar span{color:#fff; font-weight:600; font-size:15px;}
+  .scan-close{
+    background:rgba(255,255,255,.15);
+    color:#fff;
+    border:none;
+    width:36px;height:36px;
+    border-radius:50%;
+    font-size:18px;
+  }
+  .scan-frame{
+    position:absolute;
+    left:8%; right:8%; top:38%;
+    height:24%;
+    border:2px solid rgba(255,255,255,.85);
+    border-radius:12px;
+  }
+  .scan-hint{
+    position:absolute;
+    bottom:calc(30px + env(safe-area-inset-bottom));
+    left:0; right:0;
+    text-align:center;
+    color:rgba(255,255,255,.8);
+    font-size:13px;
+  }
+  .toast{
+    position:fixed;
+    left:20px; right:20px;
+    bottom:calc(24px + env(safe-area-inset-bottom));
+    background:var(--surface2);
+    color:var(--text);
+    padding:14px 16px;
+    border-radius:12px;
+    font-size:14px;
+    text-align:center;
+    opacity:0;
+    transform:translateY(10px);
+    transition:.25s;
+    pointer-events:none;
+    z-index:60;
+  }
+  .toast.show{opacity:1; transform:translateY(0);}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Barcode · Code 128</h1>
+</header>
+
+<main>
+  <div class="card">
+    <textarea id="input" placeholder="Введіть текст…" rows="2"></textarea>
+    <div class="row">
+      <button class="btn-primary" id="genBtn">Створити код</button>
+      <button class="btn-secondary" id="scanBtn">📷 Сканувати</button>
+    </div>
+    <div id="barcode-wrap">
+      <svg id="barcode"></svg>
+      <div class="row">
+        <button class="btn-secondary" id="saveImgBtn">Зберегти зображення</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">
+      <span>Історія</span>
+      <span id="clearHist" style="cursor:pointer;">Очистити</span>
+    </div>
+    <div id="history"></div>
+  </div>
+</main>
+
+<div id="scan-overlay">
+  <div class="scan-bar">
+    <span>Наведіть на штрихкод</span>
+    <button class="scan-close" id="closeScan">✕</button>
+  </div>
+  <video id="scan-video" playsinline autoplay muted></video>
+  <div class="scan-frame"></div>
+  <div class="scan-hint">Код 128 · тримайте телефон рівно</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.5/JsBarcode.all.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const input = $('input');
+const barcodeWrap = $('barcode-wrap');
+const barcodeSvg = $('barcode');
+const historyEl = $('history');
+const toast = $('toast');
+
+const STORAGE_KEY = 'barcode128_history';
+
+function showToast(msg){
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(()=>toast.classList.remove('show'), 1800);
+}
+
+function loadHistory(){
+  try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+  catch(e){ return []; }
+}
+function saveHistory(list){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+}
+function addHistory(text, source){
+  const list = loadHistory();
+  list.unshift({ text, source, ts: Date.now() });
+  saveHistory(list.slice(0,200));
+  renderHistory();
+}
+function fmtTime(ts){
+  const d = new Date(ts);
+  return d.toLocaleDateString('uk-UA') + ' ' + d.toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit'});
+}
+function renderHistory(){
+  const list = loadHistory();
+  if(!list.length){
+    historyEl.innerHTML = '<div class="empty">Поки що порожньо</div>';
+    return;
+  }
+  historyEl.innerHTML = list.map((item, i) => `
+    <div class="hist-item">
+      <div>
+        <div class="hist-text">${escapeHtml(item.text)}</div>
+        <span class="hist-time">${item.source === 'scan' ? '📷 скан · ' : ''}${fmtTime(item.ts)}</span>
+      </div>
+      <div class="hist-actions">
+        <button class="icon-btn" onclick="useHistoryItem(${i})">↻</button>
+        <button class="icon-btn" onclick="deleteHistoryItem(${i})">🗑</button>
+      </div>
+    </div>
+  `).join('');
+}
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+window.useHistoryItem = i => {
+  const list = loadHistory();
+  const item = list[i];
+  if(!item) return;
+  input.value = item.text;
+  generateBarcode(item.text, false);
+};
+window.deleteHistoryItem = i => {
+  const list = loadHistory();
+  list.splice(i,1);
+  saveHistory(list);
+  renderHistory();
+};
+$('clearHist').onclick = () => {
+  if(confirm('Очистити всю історію?')){
+    saveHistory([]);
+    renderHistory();
+  }
+};
+
+function generateBarcode(text, addToHist=true, source='manual'){
+  if(!text || !text.trim()){
+    showToast('Введіть текст');
+    return;
+  }
+  try{
+    JsBarcode(barcodeSvg, text, {
+      format: 'CODE128',
+      lineColor: '#000',
+      width: 2,
+      height: 90,
+      displayValue: true,
+      fontSize: 14,
+      margin: 8
+    });
+    barcodeWrap.classList.add('show');
+    if(addToHist) addHistory(text, source);
+  }catch(e){
+    showToast('Не вдалося створити код: ' + e.message);
+  }
+}
+
+$('genBtn').onclick = () => generateBarcode(input.value, true, 'manual');
+
+$('saveImgBtn').onclick = () => {
+  const svgData = new XMLSerializer().serializeToString(barcodeSvg);
+  const canvas = document.createElement('canvas');
+  const img = new Image();
+  const svgBlob = new Blob([svgData], {type:'image/svg+xml;charset=utf-8'});
+  const url = URL.createObjectURL(svgBlob);
+  img.onload = () => {
+    canvas.width = img.width * 2;
+    canvas.height = img.height * 2;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    URL.revokeObjectURL(url);
+    canvas.toBlob(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'barcode-' + Date.now() + '.png';
+      a.click();
+    });
+  };
+  img.src = url;
+};
+
+/* ---- Scanner ---- */
+let codeReader = null;
+let scanStream = null;
+
+$('scanBtn').onclick = async () => {
+  $('scan-overlay').classList.add('show');
+  try{
+    codeReader = new ZXing.BrowserMultiFormatReader();
+    const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
+    const backCam = devices.find(d => /back|rear|environment/i.test(d.label)) || devices[devices.length-1];
+    await codeReader.decodeFromVideoDevice(backCam ? backCam.deviceId : undefined, 'scan-video', (result, err) => {
+      if(result){
+        const text = result.getText();
+        input.value = text;
+        generateBarcode(text, true, 'scan');
+        showToast('Знайдено: ' + text);
+        stopScan();
+      }
+    });
+  }catch(e){
+    showToast('Немає доступу до камери');
+    stopScan();
+  }
+};
+
+function stopScan(){
+  $('scan-overlay').classList.remove('show');
+  if(codeReader){
+    try{ codeReader.reset(); }catch(e){}
+    codeReader = null;
+  }
+}
+$('closeScan').onclick = stopScan;
+
+renderHistory();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
