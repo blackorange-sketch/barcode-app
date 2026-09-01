@@ -222,12 +222,33 @@
   }
   .scan-hint{
     position:absolute;
-    bottom:calc(30px + env(safe-area-inset-bottom));
+    bottom:calc(90px + env(safe-area-inset-bottom));
     left:0; right:0;
     text-align:center;
     color:rgba(255,255,255,.8);
     font-size:13px;
   }
+  .scan-ocr-bar{
+    position:absolute;
+    bottom:0; left:0; right:0;
+    padding:14px 16px calc(14px + env(safe-area-inset-bottom));
+    background:linear-gradient(transparent, rgba(0,0,0,.75) 40%);
+  }
+  .btn-ocr{
+    width:100%;
+    background:rgba(255,255,255,.12);
+    color:#fff;
+    border:1px solid rgba(255,255,255,.3);
+    border-radius:12px;
+    padding:13px 16px;
+    font-size:14px;
+    font-weight:600;
+    cursor:pointer;
+    -webkit-appearance:none;
+    appearance:none;
+  }
+  .btn-ocr:active{opacity:.65;}
+  .btn-ocr:disabled{opacity:.5;}
   .toast{
     position:fixed;
     left:20px; right:20px;
@@ -286,6 +307,9 @@
   <video id="scan-video" playsinline autoplay muted disablepictureinpicture disableremoteplayback controlslist="nodownload noremoteplayback nofullscreen"></video>
   <div class="scan-frame"></div>
   <div class="scan-hint">Код 128 · тримайте телефон рівно</div>
+  <div class="scan-ocr-bar">
+    <button class="btn-ocr" id="ocrBtn">Не сканується? Розпізнати текст</button>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -490,6 +514,72 @@ async function scanWithZXing(video){
     if(result) onScanResult(result.getText());
   });
 }
+
+/* ---- OCR резерв (для пошкоджених штрихкодів) — повністю локально, без інтернету ---- */
+let tesseractLoadPromise = null;
+let ocrRunning = false;
+
+function loadTesseract(){
+  if(window.Tesseract) return Promise.resolve();
+  if(tesseractLoadPromise) return tesseractLoadPromise;
+  tesseractLoadPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'ocr/tesseract.min.js';
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return tesseractLoadPromise;
+}
+
+function captureVideoFrame(video){
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+$('ocrBtn').onclick = async () => {
+  if(ocrRunning) return;
+  const video = $('scan-video');
+  if(!scanStream || !video.videoWidth){
+    showToast('Камера ще не готова');
+    return;
+  }
+  ocrRunning = true;
+  const btn = $('ocrBtn');
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Завантаження OCR…';
+  try{
+    await loadTesseract();
+    btn.textContent = 'Розпізнаю текст…';
+    const canvas = captureVideoFrame(video);
+    const result = await Tesseract.recognize(canvas, 'eng', {
+      workerPath: 'ocr/worker.min.js',
+      corePath: 'ocr/',
+      langPath: 'ocr/',
+      gzip: true,
+      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. '
+    });
+    const text = (result.data.text || '').replace(/\s+/g, ' ').trim();
+    if(!text){
+      showToast('Не вдалося розпізнати текст — спробуй ближче/чіткіше');
+    }else{
+      input.value = text;
+      showToast('Розпізнано: ' + text + ' — перевір і натисни "Створити код"');
+      stopScan();
+    }
+  }catch(e){
+    showToast('Помилка OCR: ' + (e && e.message ? e.message : 'спробуй ще раз'));
+  }finally{
+    ocrRunning = false;
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+};
 
 $('scanBtn').onclick = async () => {
   $('scan-overlay').classList.add('show');

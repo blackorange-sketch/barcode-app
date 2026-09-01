@@ -1,11 +1,18 @@
-const CACHE = 'barcode128-v2';
+const CACHE = 'barcode128-v3';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
-  './JsBarcode.all.min.js'
+  './JsBarcode.all.min.js',
+  './ocr/tesseract.min.js',
+  './ocr/worker.min.js',
+  './ocr/tesseract-core.wasm.js',
+  './ocr/tesseract-core-simd.wasm.js',
+  './ocr/tesseract-core-lstm.wasm.js',
+  './ocr/tesseract-core-simd-lstm.wasm.js',
+  './ocr/eng.traineddata.gz'
 ];
 
 self.addEventListener('install', e => {
