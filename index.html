@@ -756,7 +756,7 @@ async function getOcrWorker(){
     // опцій мовчки ігнорується (це і було причиною сміття в розпізнаному тексті).
     await worker.setParameters({
       tessedit_pageseg_mode: '7', // один рядок тексту
-      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. '
+      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-. '
     });
     return worker;
   })();
@@ -802,20 +802,56 @@ function captureVideoFrame(video){
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(video, sx, sy, sw, sh, 0, 0, targetW, targetH);
 
-  // Ч/б + контраст: тексту простіше "виділитись" з фону для розпізнавання.
+  // 1) Grayscale
   const imgData = ctx.getImageData(0, 0, targetW, targetH);
   const d = imgData.data;
-  let sum = 0;
-  const gray = new Uint8ClampedArray(targetW * targetH);
-  for(let i = 0, p = 0; i < d.length; i += 4, p++){
+  const grayCanvas = document.createElement('canvas');
+  grayCanvas.width = targetW;
+  grayCanvas.height = targetH;
+  const grayCtx = grayCanvas.getContext('2d');
+  const grayData = grayCtx.createImageData(targetW, targetH);
+  for(let i = 0; i < d.length; i += 4){
     const g = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
-    gray[p] = g;
-    sum += g;
+    grayData.data[i] = grayData.data[i+1] = grayData.data[i+2] = g;
+    grayData.data[i+3] = 255;
   }
-  const mean = sum / gray.length;
-  const threshold = mean * 0.9; // трохи нижче середнього — краще тримає тонкі лінії тексту
+  grayCtx.putImageData(grayData, 0, 0);
+
+  // 2) Локальне "розмиття" (наближення до locally-adaptive threshold, а не
+  // єдиного порогу на все зображення) — критично для нерівного освітлення/
+  // відблисків на глянці, як-от фольга. Робимо через зменшення+збільшення.
+  const blurCanvas = document.createElement('canvas');
+  const blurScale = 16;
+  blurCanvas.width = Math.max(1, Math.round(targetW / blurScale));
+  blurCanvas.height = Math.max(1, Math.round(targetH / blurScale));
+  const blurCtx = blurCanvas.getContext('2d');
+  blurCtx.drawImage(grayCanvas, 0, 0, blurCanvas.width, blurCanvas.height);
+  const localCtx = document.createElement('canvas').getContext('2d');
+  localCtx.canvas.width = targetW;
+  localCtx.canvas.height = targetH;
+  localCtx.imageSmoothingEnabled = true;
+  localCtx.imageSmoothingQuality = 'high';
+  localCtx.drawImage(blurCanvas, 0, 0, targetW, targetH);
+  const localMean = localCtx.getImageData(0, 0, targetW, targetH).data;
+
+  // 3) Адаптивна бінаризація відносно локального середнього
+  const C = 10; // зсув порогу
+  let blackCount = 0;
+  const bin = new Uint8ClampedArray(targetW * targetH);
   for(let i = 0, p = 0; i < d.length; i += 4, p++){
-    const v = gray[p] > threshold ? 255 : 0;
+    const g = grayData.data[i];
+    const local = localMean[i];
+    const isDark = g < (local - C);
+    bin[p] = isDark ? 0 : 255;
+    if(isDark) blackCount++;
+  }
+  // 4) Якщо "темного" (передбачуваного тексту) більше половини — це, найімовірніше,
+  // світлий текст на темному фоні (як біла назва на синій стрічці) — інвертуємо,
+  // бо Tesseract очікує темний текст на світлому фоні.
+  const invert = blackCount > bin.length * 0.5;
+  for(let i = 0, p = 0; i < d.length; i += 4, p++){
+    let v = bin[p];
+    if(invert) v = 255 - v;
     d[i] = d[i+1] = d[i+2] = v;
   }
   ctx.putImageData(imgData, 0, 0);
