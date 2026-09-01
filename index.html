@@ -77,6 +77,11 @@
     cursor:pointer;
     flex:1;
     transition:opacity .15s;
+    -webkit-appearance:none;
+    appearance:none;
+    background-image:none;
+    box-shadow:none;
+    outline:none;
   }
   button:active{opacity:.65;}
   .btn-primary{background:var(--accent); color:#161616;}
@@ -130,10 +135,17 @@
     color:var(--text);
     width:34px;
     height:34px;
+    min-width:34px;
+    max-width:34px;
     border-radius:9px;
-    font-size:15px;
     cursor:pointer;
     flex:none;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:0;
+    -webkit-appearance:none;
+    appearance:none;
   }
   .empty{color:var(--muted); font-size:14px; text-align:center; padding:16px 0;}
 
@@ -174,6 +186,8 @@
     color:#fff;
     border:none;
     width:36px;height:36px;
+    min-width:36px;
+    max-width:36px;
     border-radius:50%;
     display:flex;
     align-items:center;
@@ -181,7 +195,7 @@
     padding:0;
     line-height:1;
     font-size:18px;
-    flex-shrink:0;
+    flex:none;
   }
   .scan-frame{
     position:absolute;
@@ -306,8 +320,12 @@ function renderHistory(){
         <span class="hist-time">${item.source === 'scan' ? '📷 скан · ' : ''}${fmtTime(item.ts)}</span>
       </div>
       <div class="hist-actions">
-        <button class="icon-btn" onclick="useHistoryItem(${i})">↻</button>
-        <button class="icon-btn" onclick="deleteHistoryItem(${i})">🗑</button>
+        <button class="icon-btn" onclick="useHistoryItem(${i})" aria-label="Використати">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+        </button>
+        <button class="icon-btn" onclick="deleteHistoryItem(${i})" aria-label="Видалити">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+        </button>
       </div>
     </div>
   `).join('');
