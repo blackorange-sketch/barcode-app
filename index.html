@@ -92,6 +92,32 @@
     display:flex;
     justify-content:space-between;
   }
+  .size-settings{
+    margin-top:14px;
+    background:var(--surface2);
+    border-radius:12px;
+    padding:2px 12px;
+  }
+  .size-settings summary{
+    padding:12px 2px;
+    font-size:14px;
+    font-weight:600;
+    color:var(--text);
+    cursor:pointer;
+    list-style:none;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+  .size-settings summary::-webkit-details-marker{display:none;}
+  .size-settings summary::after{
+    content:'▾';
+    color:var(--muted);
+    transition:transform .15s;
+  }
+  .size-settings[open] summary::after{transform:rotate(180deg);}
+  .size-settings .field-label{margin-top:4px;}
+  .size-settings input[type="range"]{margin-bottom:14px;}
   select{
     width:100%;
     background:var(--surface2);
@@ -352,10 +378,13 @@
       <option value="QRCODE">QR-код</option>
     </select>
 
-    <div class="field-label"><span>Товщина ліній</span><span id="widthVal">2</span></div>
-    <input type="range" id="widthRange" min="1" max="4" step="1" value="2">
-    <div class="field-label"><span>Висота</span><span id="heightVal">90</span></div>
-    <input type="range" id="heightRange" min="50" max="150" step="10" value="90">
+    <details class="size-settings">
+      <summary>Розмір штрихкоду</summary>
+      <div class="field-label"><span>Товщина ліній</span><span id="widthVal">2</span></div>
+      <input type="range" id="widthRange" min="1" max="4" step="1" value="2">
+      <div class="field-label"><span>Висота</span><span id="heightVal">90</span></div>
+      <input type="range" id="heightRange" min="50" max="150" step="10" value="90">
+    </details>
 
     <div class="row">
       <button class="btn-primary" id="genBtn">Створити код</button>
@@ -533,9 +562,18 @@ function generateBarcode(text, addToHist=true, source='manual', formatOverride, 
   try{
     if(format === 'QRCODE'){
       const cellSize = Math.max(2, Math.round(w * 2));
-      const qr = qrcode(0, 'M');
-      qr.addData(text);
-      qr.make();
+      let qr = null;
+      let qrErr = null;
+      for(let tn = 1; tn <= 40; tn++){
+        try{
+          const candidate = qrcode(tn, 'M');
+          candidate.addData(text);
+          candidate.make();
+          qr = candidate;
+          break;
+        }catch(e){ qrErr = e; }
+      }
+      if(!qr) throw new Error(qrErr ? 'текст занадто довгий для QR' : 'помилка генерації QR');
       barcodeRender.innerHTML = qr.createSvgTag(cellSize, cellSize);
     }else{
       const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
