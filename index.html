@@ -755,7 +755,7 @@ async function getOcrWorker(){
     // setParameters() на worker — передача їх в recognize()/createWorker() як
     // опцій мовчки ігнорується (це і було причиною сміття в розпізнаному тексті).
     await worker.setParameters({
-      tessedit_pageseg_mode: '7', // один рядок тексту
+      tessedit_pageseg_mode: '6', // блок тексту — коректно і для 1, і для кількох рядків
       tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-. '
     });
     return worker;
