@@ -725,6 +725,7 @@ async function scanWithZXing(video){
 
 /* ---- OCR резерв (для пошкоджених штрихкодів) — повністю локально, без інтернету ---- */
 let tesseractLoadPromise = null;
+let ocrWorkerPromise = null;
 let ocrRunning = false;
 
 function loadTesseract(){
@@ -738,6 +739,28 @@ function loadTesseract(){
     document.head.appendChild(s);
   });
   return tesseractLoadPromise;
+}
+
+async function getOcrWorker(){
+  if(ocrWorkerPromise) return ocrWorkerPromise;
+  ocrWorkerPromise = (async () => {
+    await loadTesseract();
+    const worker = await Tesseract.createWorker('eng', 1, {
+      workerPath: 'ocr/worker.min.js',
+      corePath: 'ocr/',
+      langPath: 'ocr/',
+      gzip: true
+    });
+    // ВАЖЛИВО: у Tesseract.js v5 whitelist/pageseg-mode працюють ЛИШЕ через
+    // setParameters() на worker — передача їх в recognize()/createWorker() як
+    // опцій мовчки ігнорується (це і було причиною сміття в розпізнаному тексті).
+    await worker.setParameters({
+      tessedit_pageseg_mode: '7', // один рядок тексту
+      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. '
+    });
+    return worker;
+  })();
+  return ocrWorkerPromise;
 }
 
 function captureVideoFrame(video){
@@ -812,17 +835,10 @@ $('ocrBtn').onclick = async () => {
   btn.disabled = true;
   btn.textContent = 'Завантаження OCR…';
   try{
-    await loadTesseract();
+    const worker = await getOcrWorker();
     btn.textContent = 'Розпізнаю текст…';
     const canvas = captureVideoFrame(video);
-    const result = await Tesseract.recognize(canvas, 'eng', {
-      workerPath: 'ocr/worker.min.js',
-      corePath: 'ocr/',
-      langPath: 'ocr/',
-      gzip: true,
-      tessedit_pageseg_mode: '7',
-      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. '
-    });
+    const result = await worker.recognize(canvas);
     const text = (result.data.text || '').replace(/\s+/g, ' ').trim();
     if(!text){
       showToast('Не вдалося розпізнати текст — спробуй ближче/чіткіше');
