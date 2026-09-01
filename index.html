@@ -149,6 +149,22 @@
   }
   .empty{color:var(--muted); font-size:14px; text-align:center; padding:16px 0;}
 
+  .search-input{
+    width:100%;
+    background:var(--surface2);
+    border:none;
+    border-radius:10px;
+    color:var(--text);
+    font-size:14px;
+    padding:10px 12px;
+    margin:2px 2px 12px;
+    outline:none;
+    box-sizing:border-box;
+    -webkit-appearance:none;
+    appearance:none;
+  }
+  .search-input::placeholder{color:var(--muted);}
+
   /* Scanner overlay */
   #scan-overlay{
     position:fixed; inset:0;
@@ -257,6 +273,7 @@
       <span>Історія</span>
       <span id="clearHist" style="cursor:pointer;">Очистити</span>
     </div>
+    <input type="text" id="historySearch" class="search-input" placeholder="Пошук в історії…">
     <div id="history"></div>
   </div>
 </main>
@@ -309,11 +326,20 @@ function fmtTime(ts){
 }
 function renderHistory(){
   const list = loadHistory();
+  const query = ($('historySearch').value || '').trim().toLowerCase();
+  const filtered = query
+    ? list.map((item, i) => ({item, i})).filter(({item}) => item.text.toLowerCase().includes(query))
+    : list.map((item, i) => ({item, i}));
+
   if(!list.length){
     historyEl.innerHTML = '<div class="empty">Поки що порожньо</div>';
     return;
   }
-  historyEl.innerHTML = list.map((item, i) => `
+  if(!filtered.length){
+    historyEl.innerHTML = '<div class="empty">Нічого не знайдено</div>';
+    return;
+  }
+  historyEl.innerHTML = filtered.map(({item, i}) => `
     <div class="hist-item">
       <div>
         <div class="hist-text">${escapeHtml(item.text)}</div>
@@ -330,6 +356,7 @@ function renderHistory(){
     </div>
   `).join('');
 }
+$('historySearch').addEventListener('input', renderHistory);
 function escapeHtml(s){
   return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
