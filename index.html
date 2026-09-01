@@ -855,7 +855,27 @@ function captureVideoFrame(video){
     d[i] = d[i+1] = d[i+2] = v;
   }
   ctx.putImageData(imgData, 0, 0);
-  return canvas;
+
+  // Другий варіант: контрастний сірий БЕЗ жорсткої бінаризації — для стилізованих/
+  // товстих шрифтів жорсткий поріг іноді "з'їдає" частини літер, тоді як власна
+  // (складніша) бінаризація Tesseract впорається краще на чистому сірому зображенні.
+  const grayContrastCanvas = document.createElement('canvas');
+  grayContrastCanvas.width = targetW;
+  grayContrastCanvas.height = targetH;
+  const gcCtx = grayContrastCanvas.getContext('2d');
+  const gcData = gcCtx.createImageData(targetW, targetH);
+  const contrast = 1.35;
+  for(let i = 0; i < d.length; i += 4){
+    let g = grayData.data[i];
+    if(invert) g = 255 - g;
+    let v = (g - 128) * contrast + 128;
+    v = Math.max(0, Math.min(255, v));
+    gcData.data[i] = gcData.data[i+1] = gcData.data[i+2] = v;
+    gcData.data[i+3] = 255;
+  }
+  gcCtx.putImageData(gcData, 0, 0);
+
+  return { binarized: canvas, grayscale: grayContrastCanvas };
 }
 
 $('ocrBtn').onclick = async () => {
@@ -873,9 +893,14 @@ $('ocrBtn').onclick = async () => {
   try{
     const worker = await getOcrWorker();
     btn.textContent = 'Розпізнаю текст…';
-    const canvas = captureVideoFrame(video);
-    const result = await worker.recognize(canvas);
-    const text = (result.data.text || '').replace(/\s+/g, ' ').trim();
+    const { binarized, grayscale } = captureVideoFrame(video);
+
+    const [resA, resB] = await Promise.all([
+      worker.recognize(binarized),
+      worker.recognize(grayscale)
+    ]);
+    const best = (resA.data.confidence || 0) >= (resB.data.confidence || 0) ? resA : resB;
+    const text = (best.data.text || '').replace(/\s+/g, ' ').trim();
     if(!text){
       showToast('Не вдалося розпізнати текст — спробуй ближче/чіткіше');
     }else{
