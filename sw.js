@@ -1,4 +1,4 @@
-const CACHE = 'barcode128-v3';
+const CACHE = 'barcode128-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -6,6 +6,7 @@ const ASSETS = [
   './icon-192.png',
   './icon-512.png',
   './JsBarcode.all.min.js',
+  './qrcode.min.js',
   './ocr/tesseract.min.js',
   './ocr/worker.min.js',
   './ocr/tesseract-core.wasm.js',
