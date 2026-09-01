@@ -383,10 +383,12 @@ $('saveImgBtn').onclick = () => {
   const img = new Image();
   const svgBlob = new Blob([svgData], {type:'image/svg+xml;charset=utf-8'});
   const url = URL.createObjectURL(svgBlob);
+  const SCALE = 8; // вища роздільність для чіткого друку/сканування
   img.onload = () => {
-    canvas.width = img.width * 2;
-    canvas.height = img.height * 2;
+    canvas.width = img.width * SCALE;
+    canvas.height = img.height * SCALE;
     const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = '#fff';
     ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.drawImage(img,0,0,canvas.width,canvas.height);
@@ -396,7 +398,7 @@ $('saveImgBtn').onclick = () => {
       a.href = URL.createObjectURL(blob);
       a.download = 'barcode-' + Date.now() + '.png';
       a.click();
-    });
+    }, 'image/png');
   };
   img.src = url;
 };
