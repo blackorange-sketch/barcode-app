@@ -340,6 +340,55 @@
   }
   .btn-ocr:active{opacity:.65;}
   .btn-ocr:disabled{opacity:.5;}
+  #viewer-overlay{
+    position:fixed; inset:0;
+    background:var(--bg);
+    display:none;
+    flex-direction:column;
+    z-index:55;
+  }
+  #viewer-overlay.show{display:flex;}
+  .viewer-bar{
+    padding:14px 16px calc(14px + env(safe-area-inset-top));
+    padding-top:calc(14px + env(safe-area-inset-top));
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    background:var(--surface);
+    flex-shrink:0;
+  }
+  .viewer-bar span{font-weight:600; font-size:15px; color:var(--text);}
+  #viewer-loading{
+    padding:10px 16px;
+    font-size:12px;
+    color:var(--muted);
+    text-align:center;
+    background:var(--surface2);
+    flex-shrink:0;
+  }
+  #viewer-frame{
+    flex:1;
+    width:100%;
+    border:none;
+    background:#fff;
+  }
+  .viewer-fallback{
+    display:none;
+    position:absolute;
+    left:16px; right:16px; top:50%;
+    transform:translateY(-50%);
+    background:var(--surface);
+    border-radius:16px;
+    padding:20px;
+    text-align:center;
+    gap:14px;
+    flex-direction:column;
+    align-items:center;
+  }
+  .viewer-fallback.show{display:flex;}
+  .viewer-fallback span{font-size:14px; color:var(--text);}
+  .viewer-fallback button{flex:none; padding:12px 24px;}
+
   .toast{
     position:fixed;
     left:20px; right:20px;
@@ -429,6 +478,21 @@
   </label>
   <div class="scan-ocr-bar">
     <button class="btn-ocr" id="ocrBtn">Не сканується? Розпізнати текст</button>
+  </div>
+</div>
+
+<div id="viewer-overlay">
+  <div class="viewer-bar">
+    <span>intercars.pl</span>
+    <button class="scan-close" id="closeViewer">✕</button>
+  </div>
+  <div id="viewer-loading">
+    <span>Завантаження… (код скопійовано — встав у пошук)</span>
+  </div>
+  <iframe id="viewer-frame" title="intercars.pl"></iframe>
+  <div class="viewer-fallback" id="viewerFallback">
+    <span>Сайт не відкрився у вбудованому вікні (це нормально — так налаштована безпека сайту)</span>
+    <button class="btn-primary" id="viewerOpenExternal">Відкрити у браузері</button>
   </div>
 </div>
 
@@ -663,10 +727,43 @@ $('lookupBtn').onclick = async () => {
   try{
     if(navigator.clipboard && navigator.clipboard.writeText){
       await navigator.clipboard.writeText(code);
-      showToast('Код скопійовано: ' + code + ' — встав його в пошук на сайті');
     }
-  }catch(e){ /* якщо копіювання недоступне — просто відкриваємо сайт */ }
-  window.open('https://intercars.pl/', '_blank');
+  }catch(e){ /* якщо копіювання недоступне — не критично */ }
+  showToast('Код скопійовано: ' + code);
+  openViewer('https://intercars.pl/');
+};
+
+let viewerFallbackTimer = null;
+function openViewer(url){
+  const frame = $('viewer-frame');
+  $('viewerFallback').classList.remove('show');
+  $('viewer-loading').style.display = 'block';
+  frame.src = url;
+  $('viewer-overlay').classList.add('show');
+  // Запобіжник: якщо сайт заблокував вбудовування (X-Frame-Options),
+  // iframe не викличе onload взагалі — покажемо запасний варіант через 3с.
+  clearTimeout(viewerFallbackTimer);
+  let loaded = false;
+  frame.onload = () => {
+    loaded = true;
+    $('viewer-loading').style.display = 'none';
+  };
+  viewerFallbackTimer = setTimeout(() => {
+    if(!loaded){
+      $('viewerFallback').classList.add('show');
+      $('viewer-loading').style.display = 'none';
+    }
+  }, 3000);
+}
+function closeViewer(){
+  $('viewer-overlay').classList.remove('show');
+  $('viewer-frame').src = 'about:blank';
+  clearTimeout(viewerFallbackTimer);
+}
+$('closeViewer').onclick = closeViewer;
+$('viewerOpenExternal').onclick = () => {
+  window.open($('viewer-frame').src || 'https://intercars.pl/', '_blank');
+  closeViewer();
 };
 
 /* ---- Scanner ---- */
