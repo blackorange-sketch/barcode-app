@@ -396,6 +396,9 @@
         <button class="btn-secondary" id="saveImgBtn">Зберегти зображення</button>
         <button class="btn-secondary" id="shareBtn">Поділитися</button>
       </div>
+      <div class="row" id="lookupRow" style="display:none;">
+        <button class="btn-secondary" id="lookupBtn">🔍 Знайти на intercars.pl</button>
+      </div>
     </div>
   </div>
 
@@ -590,6 +593,7 @@ function generateBarcode(text, addToHist=true, source='manual', formatOverride, 
     }
     barcodeWrap.classList.add('show');
     lastGenerated = { text, format };
+    $('lookupRow').style.display = (format !== 'QRCODE') ? 'flex' : 'none';
     if(addToHist) addHistory(text, source, format, tag);
   }catch(e){
     showToast('Не вдалося створити код: ' + e.message);
@@ -651,6 +655,18 @@ $('shareBtn').onclick = async () => {
   }catch(e){
     if(e && e.name !== 'AbortError') showToast('Не вдалося поділитися');
   }
+};
+
+$('lookupBtn').onclick = async () => {
+  const code = lastGenerated.text;
+  if(!code){ showToast('Спершу створи код'); return; }
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(code);
+      showToast('Код скопійовано: ' + code + ' — встав його в пошук на сайті');
+    }
+  }catch(e){ /* якщо копіювання недоступне — просто відкриваємо сайт */ }
+  window.open('https://intercars.pl/', '_blank');
 };
 
 /* ---- Scanner ---- */
