@@ -730,8 +730,10 @@ $('lookupBtn').onclick = async () => {
       await navigator.clipboard.writeText(code);
     }
   }catch(e){ /* якщо копіювання недоступне — не критично */ }
-  showToast('Код скопійовано: ' + code);
-  openViewer('https://intercars.pl/');
+  const encoded = btoa(code);
+  const url = 'https://intercars.pl/oferta/onoffer=0&search=' + encoded;
+  showToast('Відкриваю пошук: ' + code);
+  openViewer(url);
 };
 
 let viewerFallbackTimer = null;
