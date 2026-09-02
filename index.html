@@ -340,6 +340,39 @@
     flex-direction:column;
     gap:8px;
   }
+  .scan-confirm{
+    display:none;
+    position:absolute;
+    left:16px; right:16px; top:50%;
+    transform:translateY(-50%);
+    background:var(--surface);
+    border-radius:16px;
+    padding:20px;
+    flex-direction:column;
+    gap:12px;
+    z-index:2;
+  }
+  .scan-confirm.show{display:flex;}
+  .scan-confirm-label{
+    font-size:14px;
+    font-weight:600;
+    color:var(--text);
+    text-align:center;
+  }
+  .scan-confirm-input{
+    width:100%;
+    background:var(--surface2);
+    border:none;
+    border-radius:10px;
+    color:var(--text);
+    font-size:16px;
+    padding:12px;
+    outline:none;
+    box-sizing:border-box;
+    -webkit-appearance:none;
+    appearance:none;
+  }
+  .scan-confirm-row{display:flex; gap:10px;}
   .btn-ocr{
     width:100%;
     background:rgba(255,255,255,.12);
@@ -512,6 +545,14 @@
     <button class="btn-ocr" id="ocrBtn">Не сканується? Розпізнати текст</button>
     <button class="btn-ocr" id="geminiBtn" style="display:none;">🤖 Розпізнати через Gemini AI</button>
   </div>
+  <div class="scan-confirm" id="scanConfirm">
+    <span class="scan-confirm-label">Знайдено — все вірно?</span>
+    <input type="text" id="scanConfirmInput" class="scan-confirm-input">
+    <div class="scan-confirm-row">
+      <button class="btn-primary" id="scanConfirmYes">✓ Так, створити код</button>
+      <button class="btn-secondary" id="scanConfirmRetry">↻ Сканувати ще раз</button>
+    </div>
+  </div>
 </div>
 
 <div id="viewer-overlay">
@@ -581,7 +622,20 @@ function saveHistory(list){
 }
 function addHistory(text, source, format, tag){
   const list = loadHistory();
-  list.unshift({ text, source, format: format || 'CODE128', tag: tag || '', ts: Date.now() });
+  const fmt = format || 'CODE128';
+  // Не плодимо дублі: якщо такий самий код+формат вже є в історії —
+  // оновлюємо його (час, тег, джерело) і піднімаємо наверх замість нового запису.
+  const existingIndex = list.findIndex(item => item.text === text && (item.format || 'CODE128') === fmt);
+  let entry;
+  if(existingIndex !== -1){
+    entry = list.splice(existingIndex, 1)[0];
+    entry.ts = Date.now();
+    entry.source = source;
+    if(tag) entry.tag = tag; // новий тег переважає, порожній — лишаємо старий
+  }else{
+    entry = { text, source, format: fmt, tag: tag || '', ts: Date.now() };
+  }
+  list.unshift(entry);
   saveHistory(list.slice(0,200));
   renderHistory();
 }
@@ -850,20 +904,46 @@ function loadZXing(){
   return zxingLoadPromise;
 }
 
+let awaitingConfirm = false;
+
 function onScanResult(text){
   const now = Date.now();
   if(text === lastResultText && (now - lastResultTime) < 2500) return; // дедублікація
+  if(awaitingConfirm) return; // вже показуємо підтвердження — ігноруємо нові кадри
   lastResultText = text;
   lastResultTime = now;
 
   if(navigator.vibrate) navigator.vibrate(150);
 
   const continuous = $('continuousToggle').checked;
+  if(continuous){
+    // У безперервному режимі підтвердження заважало б швидкості — додаємо одразу.
+    input.value = text;
+    generateBarcode(text, true, 'scan');
+    showToast('Знайдено: ' + text);
+  }else{
+    awaitingConfirm = true;
+    $('scanConfirmInput').value = text;
+    $('scanConfirm').classList.add('show');
+  }
+}
+
+$('scanConfirmYes').onclick = () => {
+  const text = $('scanConfirmInput').value.trim();
+  if(!text){ showToast('Порожній код'); return; }
   input.value = text;
   generateBarcode(text, true, 'scan');
-  showToast('Знайдено: ' + text);
-  if(!continuous) stopScan();
-}
+  showToast('Створено: ' + text);
+  $('scanConfirm').classList.remove('show');
+  awaitingConfirm = false;
+  stopScan();
+};
+$('scanConfirmRetry').onclick = () => {
+  $('scanConfirm').classList.remove('show');
+  awaitingConfirm = false;
+  lastResultText = '';
+  lastResultTime = 0;
+};
 
 async function startCamera(){
   const constraints = { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } };
@@ -1201,6 +1281,8 @@ $('scanBtn').onclick = async () => {
   $('scan-overlay').classList.add('show');
   lastResultText = '';
   lastResultTime = 0;
+  awaitingConfirm = false;
+  $('scanConfirm').classList.remove('show');
   try{
     const video = await startCamera();
     if('BarcodeDetector' in window){
@@ -1216,6 +1298,8 @@ $('scanBtn').onclick = async () => {
 
 function stopScan(){
   $('scan-overlay').classList.remove('show');
+  $('scanConfirm').classList.remove('show');
+  awaitingConfirm = false;
   if(scanRAF){ cancelAnimationFrame(scanRAF); scanRAF = null; }
   if(zxingReader){ try{ zxingReader.reset(); }catch(e){} zxingReader = null; }
   if(scanStream){ scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
