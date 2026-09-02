@@ -1140,7 +1140,7 @@ async function canvasToBase64Jpeg(canvas){
 
 async function recognizeWithGemini(canvas, apiKey){
   const base64 = await canvasToBase64Jpeg(canvas);
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + encodeURIComponent(apiKey);
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=' + encodeURIComponent(apiKey);
   const body = {
     contents: [{
       parts: [
