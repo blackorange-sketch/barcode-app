@@ -491,8 +491,9 @@
   </div>
   <iframe id="viewer-frame" title="intercars.pl"></iframe>
   <div class="viewer-fallback" id="viewerFallback">
-    <span>Сайт не відкрився у вбудованому вікні (це нормально — так налаштована безпека сайту)</span>
+    <span>Сайт довго вантажиться, або заблокований (це нормально — так налаштована безпека сайту)</span>
     <button class="btn-primary" id="viewerOpenExternal">Відкрити у браузері</button>
+    <button class="btn-secondary" id="viewerDismiss">Приховати (якщо сайт вже видно позаду)</button>
   </div>
 </div>
 
@@ -753,7 +754,7 @@ function openViewer(url){
       $('viewerFallback').classList.add('show');
       $('viewer-loading').style.display = 'none';
     }
-  }, 3000);
+  }, 7000);
 }
 function closeViewer(){
   $('viewer-overlay').classList.remove('show');
@@ -764,6 +765,9 @@ $('closeViewer').onclick = closeViewer;
 $('viewerOpenExternal').onclick = () => {
   window.open($('viewer-frame').src || 'https://intercars.pl/', '_blank');
   closeViewer();
+};
+$('viewerDismiss').onclick = () => {
+  $('viewerFallback').classList.remove('show');
 };
 
 /* ---- Scanner ---- */
