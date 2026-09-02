@@ -1269,9 +1269,14 @@ geminiBtn.onclick = async () => {
   const originalLabel = geminiBtn.textContent;
   geminiBtn.disabled = true;
   geminiBtn.textContent = 'Питаю Gemini…';
+  // Сторожовий таймер на ВЕСЬ процес (не лише мережевий запит) — гарантує,
+  // що кнопка розблокується за 25с, хай навіть зависне якийсь інший крок.
+  const watchdog = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Час очікування вичерпано (25с)')), 25000)
+  );
   try{
     const canvas = captureVideoFrameRaw(video);
-    const text = await recognizeWithGemini(canvas, apiKey);
+    const text = await Promise.race([recognizeWithGemini(canvas, apiKey), watchdog]);
     if(!text){
       showToast('Gemini не побачив тексту — спробуй ближче/чіткіше');
     }else{
@@ -1293,6 +1298,9 @@ $('scanBtn').onclick = async () => {
   lastResultText = '';
   lastResultTime = 0;
   awaitingConfirm = false;
+  geminiRunning = false;
+  ocrRunning = false;
+  geminiBtn.disabled = false;
   $('scanConfirm').classList.remove('show');
   try{
     const video = await startCamera();
