@@ -331,6 +331,17 @@
     font-size:13px;
   }
   .scan-continuous input{width:16px; height:16px;}
+  .scan-zoom{
+    position:absolute;
+    bottom:calc(210px + env(safe-area-inset-bottom));
+    left:16px; right:16px;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    color:#fff;
+    font-size:14px;
+  }
+  .scan-zoom input{flex:1;}
   .scan-ocr-bar{
     position:absolute;
     bottom:0; left:0; right:0;
@@ -434,6 +445,43 @@
     align-items:center;
   }
   .viewer-fallback.show{display:flex;}
+
+  #session-summary-overlay{
+    position:fixed; inset:0;
+    background:rgba(0,0,0,.6);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:65;
+    padding:20px;
+  }
+  #session-summary-overlay.show{display:flex;}
+  .session-summary-card{
+    background:var(--surface);
+    border-radius:16px;
+    padding:20px;
+    max-width:420px;
+    width:100%;
+    max-height:80vh;
+    display:flex;
+    flex-direction:column;
+  }
+  .session-summary-card h3{margin:0 0 12px; font-size:16px; color:var(--text);}
+  .session-list{
+    overflow-y:auto;
+    flex:1;
+    margin-bottom:14px;
+    border:1px solid var(--surface2);
+    border-radius:10px;
+  }
+  .session-item{
+    padding:10px 12px;
+    font-size:14px;
+    color:var(--text);
+    border-bottom:1px solid var(--surface2);
+    word-break:break-all;
+  }
+  .session-item:last-child{border-bottom:none;}
   .viewer-fallback span{font-size:14px; color:var(--text);}
   .viewer-fallback button{flex:none; padding:12px 24px;}
 
@@ -454,6 +502,23 @@
     z-index:60;
   }
   .toast.show{opacity:1; transform:translateY(0);}
+  .undo-toast{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    pointer-events:none;
+  }
+  .undo-toast.show{pointer-events:auto;}
+  .undo-toast span{flex:1;}
+  .undo-toast button{
+    flex:none;
+    background:var(--accent);
+    color:var(--accent-text);
+    padding:8px 14px;
+    font-size:13px;
+    border-radius:8px;
+  }
 </style>
 </head>
 <body>
@@ -492,6 +557,10 @@
       <button class="btn-primary" id="genBtn">Створити код</button>
       <button class="btn-secondary" id="scanBtn">📷 Сканувати</button>
     </div>
+    <div class="row">
+      <button class="btn-secondary" id="photoScanBtn">🖼️ Скан з фото</button>
+    </div>
+    <input type="file" id="photoScanInput" accept="image/*" style="display:none;">
     <div id="barcode-wrap">
       <div id="barcode-render"></div>
       <div class="row">
@@ -504,13 +573,16 @@
   <div class="card">
     <details class="size-settings" id="historyDetails">
       <summary>Історія <span id="histCountBadge" class="hist-count-badge"></span></summary>
-      <div class="section-title" style="margin-top:6px;">
+      <div class="section-title" style="margin-top:6px; flex-wrap:wrap; row-gap:8px;">
         <span></span>
         <div class="actions">
-          <span id="exportHist">Експорт CSV</span>
+          <span id="exportHist">CSV</span>
+          <span id="exportJson">JSON ↓</span>
+          <span id="importJson">JSON ↑</span>
           <span id="clearHist">Очистити</span>
         </div>
       </div>
+      <input type="file" id="importJsonInput" accept="application/json" style="display:none;">
       <input type="text" id="historySearch" class="search-input" placeholder="Пошук в історії (текст або тег)…">
       <div id="history"></div>
     </details>
@@ -527,6 +599,19 @@
       <input type="password" id="geminiKeyInput" class="tag-input" placeholder="Встав Gemini API-ключ сюди…" autocomplete="off">
     </details>
   </div>
+
+  <div class="card">
+    <details class="size-settings">
+      <summary>🧹 Автоочищення історії</summary>
+      <p class="gemini-hint">Записи старіші за обраний період видалятимуться автоматично при відкритті застосунку.</p>
+      <select id="autoCleanupSelect">
+        <option value="0">Вимкнено</option>
+        <option value="30">Старші за 30 днів</option>
+        <option value="60">Старші за 60 днів</option>
+        <option value="90">Старші за 90 днів</option>
+      </select>
+    </details>
+  </div>
 </main>
 
 <div id="scan-overlay">
@@ -537,6 +622,11 @@
   <video id="scan-video" playsinline autoplay muted disablepictureinpicture disableremoteplayback controlslist="nodownload noremoteplayback nofullscreen"></video>
   <div class="scan-frame"></div>
   <div class="scan-hint">Код 128 · тримайте телефон рівно</div>
+  <div class="scan-zoom" id="scanZoomRow" style="display:none;">
+    <span>🔍−</span>
+    <input type="range" id="zoomRange" min="1" max="1" step="0.1" value="1">
+    <span>🔍+</span>
+  </div>
   <label class="scan-continuous">
     <input type="checkbox" id="continuousToggle">
     Сканувати кілька товарів поспіль
@@ -551,6 +641,17 @@
     <div class="scan-confirm-row">
       <button class="btn-primary" id="scanConfirmYes">✓ Так, створити код</button>
       <button class="btn-secondary" id="scanConfirmRetry">↻ Сканувати ще раз</button>
+    </div>
+  </div>
+</div>
+
+<div id="session-summary-overlay">
+  <div class="session-summary-card">
+    <h3>Скановано <span id="sessionSummaryCount">0</span> товарів</h3>
+    <div id="sessionSummaryList" class="session-list"></div>
+    <div class="row">
+      <button class="btn-primary" id="sessionSummaryShare">Поділитися списком</button>
+      <button class="btn-secondary" id="sessionSummaryClose">Закрити</button>
     </div>
   </div>
 </div>
@@ -572,6 +673,10 @@
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="toast undo-toast" id="undoToast">
+  <span id="undoToastText"></span>
+  <button id="undoToastBtn">Скасувати</button>
+</div>
 
 <script src="JsBarcode.all.min.js"></script>
 <script src="qrcode.min.js"></script>
@@ -636,7 +741,7 @@ function addHistory(text, source, format, tag){
     entry = { text, source, format: fmt, tag: tag || '', ts: Date.now() };
   }
   list.unshift(entry);
-  saveHistory(list.slice(0,200));
+  saveHistory(list.slice(0,500));
   renderHistory();
 }
 function fmtTime(ts){
@@ -691,10 +796,32 @@ window.useHistoryItem = i => {
   formatSelect.value = item.format || 'CODE128';
   generateBarcode(item.text, false, 'manual', item.format, item.tag);
 };
+let pendingDelete = null;
 window.deleteHistoryItem = i => {
   const list = loadHistory();
-  list.splice(i,1);
+  const removed = list.splice(i,1)[0];
   saveHistory(list);
+  renderHistory();
+
+  clearTimeout(pendingDelete && pendingDelete.timer);
+  pendingDelete = {
+    item: removed,
+    timer: setTimeout(() => {
+      $('undoToast').classList.remove('show');
+      pendingDelete = null;
+    }, 5000)
+  };
+  $('undoToastText').textContent = 'Видалено: ' + removed.text;
+  $('undoToast').classList.add('show');
+};
+$('undoToastBtn').onclick = () => {
+  if(!pendingDelete) return;
+  clearTimeout(pendingDelete.timer);
+  const list = loadHistory();
+  list.unshift(pendingDelete.item);
+  saveHistory(list);
+  pendingDelete = null;
+  $('undoToast').classList.remove('show');
   renderHistory();
 };
 $('clearHist').onclick = () => {
@@ -717,6 +844,51 @@ $('exportHist').onclick = () => {
   a.download = 'barcode-history-' + Date.now() + '.csv';
   a.click();
 };
+
+$('exportJson').onclick = () => {
+  const list = loadHistory();
+  if(!list.length){ showToast('Історія порожня'); return; }
+  const blob = new Blob([JSON.stringify(list, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'barcode-history-backup-' + Date.now() + '.json';
+  a.click();
+  showToast('JSON-резервну копію збережено');
+};
+
+$('importJson').onclick = () => $('importJsonInput').click();
+$('importJsonInput').addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const imported = JSON.parse(reader.result);
+      if(!Array.isArray(imported)) throw new Error('Невірний формат файлу');
+      let list = loadHistory();
+      let added = 0, updated = 0;
+      imported.forEach(imp => {
+        if(!imp || !imp.text) return;
+        const fmt = imp.format || 'CODE128';
+        const idx = list.findIndex(x => x.text === imp.text && (x.format || 'CODE128') === fmt);
+        if(idx !== -1){
+          if((imp.ts || 0) > (list[idx].ts || 0)){ list[idx] = { ...list[idx], ...imp, format: fmt }; updated++; }
+        }else{
+          list.push({ text: imp.text, source: imp.source || 'import', format: fmt, tag: imp.tag || '', ts: imp.ts || Date.now() });
+          added++;
+        }
+      });
+      list.sort((a,b) => (b.ts||0) - (a.ts||0));
+      saveHistory(list.slice(0, 500));
+      renderHistory();
+      showToast(`Імпортовано: ${added} нових, ${updated} оновлено`);
+    }catch(err){
+      showToast('Не вдалося прочитати файл: ' + (err.message || 'невірний JSON'));
+    }
+  };
+  reader.readAsText(file);
+});
 
 function generateBarcode(text, addToHist=true, source='manual', formatOverride, tagOverride){
   if(!text || !text.trim()){
@@ -920,6 +1092,7 @@ function onScanResult(text){
     // У безперервному режимі підтвердження заважало б швидкості — додаємо одразу.
     input.value = text;
     generateBarcode(text, true, 'scan');
+    sessionItems.push({ text, format: lastGenerated.format, ts: Date.now() });
     showToast('Знайдено: ' + text);
   }else{
     awaitingConfirm = true;
@@ -933,6 +1106,7 @@ $('scanConfirmYes').onclick = () => {
   if(!text){ showToast('Порожній код'); return; }
   input.value = text;
   generateBarcode(text, true, 'scan');
+  sessionItems.push({ text, format: lastGenerated.format, ts: Date.now() });
   showToast('Створено: ' + text);
   $('scanConfirm').classList.remove('show');
   awaitingConfirm = false;
@@ -951,7 +1125,25 @@ async function startCamera(){
   const video = $('scan-video');
   video.srcObject = scanStream;
   await video.play();
+  setupZoom(scanStream);
   return video;
+}
+
+function setupZoom(stream){
+  const track = stream.getVideoTracks()[0];
+  const zoomRow = $('scanZoomRow');
+  const zoomRange = $('zoomRange');
+  if(!track || !track.getCapabilities){ zoomRow.style.display = 'none'; return; }
+  const caps = track.getCapabilities();
+  if(!caps.zoom){ zoomRow.style.display = 'none'; return; }
+  zoomRange.min = caps.zoom.min;
+  zoomRange.max = caps.zoom.max;
+  zoomRange.step = caps.zoom.step || 0.1;
+  zoomRange.value = track.getSettings().zoom || caps.zoom.min;
+  zoomRow.style.display = 'flex';
+  zoomRange.oninput = () => {
+    track.applyConstraints({ advanced: [{ zoom: parseFloat(zoomRange.value) }] }).catch(()=>{});
+  };
 }
 
 async function scanWithNativeDetector(video){
@@ -1293,6 +1485,68 @@ geminiBtn.onclick = async () => {
   }
 };
 
+/* ---- Скан з фото (галерея/файл) ---- */
+$('photoScanBtn').onclick = () => $('photoScanInput').click();
+
+$('photoScanInput').addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = ''; // щоб можна було вибрати той самий файл повторно
+  if(!file) return;
+
+  showToast('Обробляю фото…');
+  try{
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = reject;
+      im.src = URL.createObjectURL(file);
+    });
+
+    // Обмежуємо розмір для швидшої обробки
+    const maxDim = 1600;
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(img.src);
+
+    let found = null;
+    if('BarcodeDetector' in window){
+      try{
+        const detector = new window.BarcodeDetector({
+          formats: ['code_128','code_39','code_93','codabar','ean_13','ean_8','itf','upc_a','upc_e','qr_code']
+        });
+        const codes = await detector.detect(canvas);
+        if(codes && codes.length) found = codes[0].rawValue;
+      }catch(err){ /* ігноруємо — спробуємо OCR нижче */ }
+    }
+
+    if(found){
+      if(navigator.vibrate) navigator.vibrate(150);
+      input.value = found;
+      showToast('Знайдено на фото: ' + found + ' — перевір і натисни "Створити код"');
+      return;
+    }
+
+    showToast('Штрихкод не знайдено, пробую розпізнати текст…');
+    const worker = await getOcrWorker();
+    const result = await worker.recognize(canvas);
+    const text = (result.data.text || '').replace(/\s+/g, ' ').trim();
+    if(text){
+      input.value = text;
+      showToast('OCR розпізнав: ' + text + ' — перевір і натисни "Створити код"');
+    }else{
+      showToast('Нічого не вдалося розпізнати на цьому фото');
+    }
+  }catch(err){
+    showToast('Не вдалося обробити фото: ' + (err && err.message ? err.message : 'спробуй інше'));
+  }
+});
+
+let sessionItems = [];
+
 $('scanBtn').onclick = async () => {
   $('scan-overlay').classList.add('show');
   lastResultText = '';
@@ -1301,6 +1555,7 @@ $('scanBtn').onclick = async () => {
   geminiRunning = false;
   ocrRunning = false;
   geminiBtn.disabled = false;
+  sessionItems = [];
   $('scanConfirm').classList.remove('show');
   try{
     const video = await startCamera();
@@ -1322,9 +1577,51 @@ function stopScan(){
   if(scanRAF){ cancelAnimationFrame(scanRAF); scanRAF = null; }
   if(zxingReader){ try{ zxingReader.reset(); }catch(e){} zxingReader = null; }
   if(scanStream){ scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+  if(sessionItems.length >= 2) showSessionSummary();
 }
 $('closeScan').onclick = stopScan;
 
+function showSessionSummary(){
+  const list = $('sessionSummaryList');
+  list.innerHTML = sessionItems.map(it => `<div class="session-item">${escapeHtml(it.text)}</div>`).join('');
+  $('sessionSummaryCount').textContent = sessionItems.length;
+  $('session-summary-overlay').classList.add('show');
+}
+$('sessionSummaryClose').onclick = () => {
+  $('session-summary-overlay').classList.remove('show');
+};
+$('sessionSummaryShare').onclick = async () => {
+  const text = sessionItems.map(it => it.text).join('\n');
+  try{
+    if(navigator.share){
+      await navigator.share({ title: 'Скановані коди', text });
+    }else if(navigator.clipboard){
+      await navigator.clipboard.writeText(text);
+      showToast('Список скопійовано в буфер');
+    }
+  }catch(e){ /* AbortError при скасуванні — ігноруємо */ }
+};
+
+const CLEANUP_STORAGE_KEY = 'barcode128_autocleanup_days';
+const autoCleanupSelect = $('autoCleanupSelect');
+autoCleanupSelect.value = localStorage.getItem(CLEANUP_STORAGE_KEY) || '0';
+autoCleanupSelect.addEventListener('change', () => {
+  localStorage.setItem(CLEANUP_STORAGE_KEY, autoCleanupSelect.value);
+  runAutoCleanup();
+});
+function runAutoCleanup(){
+  const days = parseInt(autoCleanupSelect.value, 10);
+  if(!days) return;
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const list = loadHistory();
+  const kept = list.filter(item => (item.ts || 0) >= cutoff);
+  if(kept.length !== list.length){
+    saveHistory(kept);
+    showToast(`Автоочищення: видалено ${list.length - kept.length} старих записів`);
+  }
+}
+
+runAutoCleanup();
 renderHistory();
 
 if('serviceWorker' in navigator){
