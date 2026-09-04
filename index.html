@@ -519,6 +519,19 @@
     font-size:13px;
     border-radius:8px;
   }
+  @media print{
+    body *{ visibility:hidden; }
+    #barcode-render, #barcode-render *{ visibility:visible; }
+    #barcode-render{
+      position:absolute;
+      top:0; left:0;
+      width:100%;
+      display:flex;
+      justify-content:center;
+      padding:20px;
+    }
+    #barcode-render svg{ max-width:90%; height:auto; }
+  }
 </style>
 </head>
 <body>
@@ -566,6 +579,9 @@
       <div class="row">
         <button class="btn-secondary" id="saveImgBtn">Зберегти зображення</button>
         <button class="btn-secondary" id="shareBtn">Поділитися</button>
+      </div>
+      <div class="row">
+        <button class="btn-secondary" id="printBtn">🖨️ Друк</button>
       </div>
     </div>
   </div>
@@ -994,6 +1010,11 @@ $('shareBtn').onclick = async () => {
   }catch(e){
     if(e && e.name !== 'AbortError') showToast('Не вдалося поділитися');
   }
+};
+
+$('printBtn').onclick = () => {
+  if(!barcodeRender.querySelector('svg')){ showToast('Спершу створи код'); return; }
+  window.print();
 };
 
 $('lookupBtn').onclick = async () => {
