@@ -1836,7 +1836,24 @@ let cropDragging = false;
 function openPhotoCrop(sourceCanvas){
   cropSelection = null;
   $('photoCropBox').classList.remove('show');
-  $('photoCropImg').src = sourceCanvas.toDataURL('image/jpeg', 0.9);
+
+  // Для показу на екрані використовуємо зменшену копію — величезне фото
+  // з камери (12+ Мп) дає настільки довгий data-URL, що WebView мовчки не
+  // показує зображення (порожній чорний екран, без помилки). Для самого
+  // аналізу/обрізки photoSourceCanvas (оригінал) лишається без змін.
+  const maxPreview = 1280;
+  const scale = Math.min(1, maxPreview / Math.max(sourceCanvas.width, sourceCanvas.height));
+  let previewDataUrl;
+  if(scale < 1){
+    const previewCanvas = document.createElement('canvas');
+    previewCanvas.width = Math.round(sourceCanvas.width * scale);
+    previewCanvas.height = Math.round(sourceCanvas.height * scale);
+    previewCanvas.getContext('2d').drawImage(sourceCanvas, 0, 0, previewCanvas.width, previewCanvas.height);
+    previewDataUrl = previewCanvas.toDataURL('image/jpeg', 0.85);
+  }else{
+    previewDataUrl = sourceCanvas.toDataURL('image/jpeg', 0.9);
+  }
+  $('photoCropImg').src = previewDataUrl;
   $('photo-crop-overlay').classList.add('show');
 }
 function closePhotoCrop(){
