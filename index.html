@@ -1489,6 +1489,27 @@ async function getOcrWorker(){
   return ocrWorkerPromise;
 }
 
+// Пробує обидва режими сегментації (один рядок / блок тексту) на кожному
+// з переданих варіантів зображення (бінаризований/сірий) і обирає результат
+// з найвищою впевненістю Tesseract. Повільніше (до 4 проходів), але помітно
+// точніше, особливо коли в кадр потрапили ще й смужки самого штрихкоду.
+async function recognizeBest(worker, canvases){
+  const psmModes = ['7', '6'];
+  let best = null;
+  for(const psm of psmModes){
+    await worker.setParameters({ tessedit_pageseg_mode: psm });
+    for(const canvas of canvases){
+      const res = await worker.recognize(canvas);
+      const conf = res.data.confidence || 0;
+      if(!best || conf > best.confidence){
+        best = { confidence: conf, text: res.data.text || '', canvas };
+      }
+    }
+  }
+  await worker.setParameters({ tessedit_pageseg_mode: '6' }); // повернути дефолт
+  return best;
+}
+
 function computeCropRect(video){
   // Мапимо видиму рамку сканування (CSS %, object-fit:cover) на реальні пікселі відео,
   // щоб аналізувати тільки потрібну ділянку, а не весь кадр з фоном.
@@ -1641,13 +1662,8 @@ $('ocrBtn').onclick = async () => {
     const worker = await getOcrWorker();
     btn.textContent = 'Розпізнаю текст…';
     const { binarized, grayscale } = captureVideoFrame(video);
-
-    const [resA, resB] = await Promise.all([
-      worker.recognize(binarized),
-      worker.recognize(grayscale)
-    ]);
-    const best = (resA.data.confidence || 0) >= (resB.data.confidence || 0) ? resA : resB;
-    const text = (best.data.text || '').replace(/\s+/g, ' ').trim();
+    const best = await recognizeBest(worker, [binarized, grayscale]);
+    const text = best.text.replace(/\s+/g, ' ').trim();
     if(!text){
       showToast('Не вдалося розпізнати текст — спробуй ближче/чіткіше');
     }else{
@@ -1992,11 +2008,9 @@ $('photoCropConfirm').onclick = async () => {
 
     const { binarized, grayscale } = binarizeSource(photoSourceCanvas, sx, sy, sw, sh, targetW, targetH);
     const worker = await getOcrWorker();
-    const [resA, resB] = await Promise.all([worker.recognize(binarized), worker.recognize(grayscale)]);
-    const best = (resA.data.confidence || 0) >= (resB.data.confidence || 0) ? resA : resB;
-    const bestCanvas = best === resA ? binarized : grayscale;
-    const text = (best.data.text || '').replace(/\s+/g, ' ').trim();
-    $('photoOcrPreviewImg').src = bestCanvas.toDataURL('image/png');
+    const best = await recognizeBest(worker, [binarized, grayscale]);
+    const text = best.text.replace(/\s+/g, ' ').trim();
+    $('photoOcrPreviewImg').src = best.canvas.toDataURL('image/png');
     $('photoOcrResultInput').value = text;
     $('photo-ocr-result-overlay').classList.add('show');
   }catch(err){
