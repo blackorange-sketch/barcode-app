@@ -1923,7 +1923,7 @@ $('photoCropReset').onclick = () => {
     const x0 = (boxRect.left - disp.left) / disp.width;
     const y0 = (boxRect.top - disp.top) / disp.height;
     const x1 = (boxRect.left + boxRect.width - disp.left) / disp.width;
-    const y1 = (boxRect.top + boxRect.height - disp.height) / disp.height;
+    const y1 = (boxRect.top + boxRect.height - disp.top) / disp.height;
     cropSelection = {
       x0: Math.max(0, Math.min(1, x0)), y0: Math.max(0, Math.min(1, y0)),
       x1: Math.max(0, Math.min(1, x1)), y1: Math.max(0, Math.min(1, y1))
@@ -1937,7 +1937,7 @@ $('photoCropConfirm').onclick = async () => {
   if(!photoSourceCanvas) return;
   const sw0 = photoSourceCanvas.width, sh0 = photoSourceCanvas.height;
   let sx, sy, sw, sh;
-  if(cropSelection){
+  if(cropSelection && cropSelection.x1 > cropSelection.x0 && cropSelection.y1 > cropSelection.y0){
     sx = cropSelection.x0 * sw0;
     sy = cropSelection.y0 * sh0;
     sw = (cropSelection.x1 - cropSelection.x0) * sw0;
@@ -1945,7 +1945,10 @@ $('photoCropConfirm').onclick = async () => {
   }else{
     sx = 0; sy = 0; sw = sw0; sh = sh0;
   }
-  sw = Math.max(1, sw); sh = Math.max(1, sh);
+  if(!Number.isFinite(sx) || !Number.isFinite(sy) || !Number.isFinite(sw) || !Number.isFinite(sh) || sw <= 0 || sh <= 0){
+    showToast('Виділення некоректне — обробляю все фото');
+    sx = 0; sy = 0; sw = sw0; sh = sh0;
+  }
   const targetW = Math.min(1400, Math.round(sw * 3));
   const targetH = Math.round(targetW * (sh / sw));
 
