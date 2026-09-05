@@ -701,6 +701,10 @@
         Ключ зберігається лише на цьому телефоні.
       </p>
       <input type="password" id="geminiKeyInput" class="tag-input" placeholder="Встав Gemini API-ключ сюди…" autocomplete="off">
+      <label class="scan-continuous" style="color:var(--text); justify-content:flex-start; position:static; margin-top:12px;">
+        <input type="checkbox" id="geminiWebSearchToggle">
+        Шукати назву товару в інтернеті, якщо не видно на етикетці (5000 безкоштовних пошуків/міс.)
+      </label>
     </details>
   </div>
 
@@ -1556,6 +1560,22 @@ function captureVideoFrameRaw(video){
   return canvas;
 }
 
+function captureVideoFrameFull(video){
+  // Весь кадр (не лише вузька рамка штрихкоду) — Gemini краще розпізнає ще
+  // й НАЗВУ товару, якщо вона потрапляє в кадр поруч зі штрихкодом.
+  const maxDim = 1600;
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const scale = Math.min(1, maxDim / Math.max(vw, vh));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(vw * scale);
+  canvas.height = Math.round(vh * scale);
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
 function binarizeSource(source, sx, sy, sw, sh, targetW, targetH){
   const canvas = document.createElement('canvas');
   canvas.width = targetW;
@@ -1698,6 +1718,13 @@ geminiKeyInput.addEventListener('input', () => {
 });
 loadGeminiKey();
 
+const GEMINI_WEBSEARCH_STORAGE = 'barcode128_gemini_websearch';
+const geminiWebSearchToggle = $('geminiWebSearchToggle');
+geminiWebSearchToggle.checked = localStorage.getItem(GEMINI_WEBSEARCH_STORAGE) === '1';
+geminiWebSearchToggle.addEventListener('change', () => {
+  localStorage.setItem(GEMINI_WEBSEARCH_STORAGE, geminiWebSearchToggle.checked ? '1' : '0');
+});
+
 async function canvasToBase64Jpeg(canvas){
   return new Promise(resolve => {
     canvas.toBlob(blob => {
@@ -1708,19 +1735,26 @@ async function canvasToBase64Jpeg(canvas){
   });
 }
 
-async function recognizeWithGemini(canvas, apiKey){
+async function recognizeWithGemini(canvas, apiKey, useWebSearch){
   const base64 = await canvasToBase64Jpeg(canvas);
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=' + encodeURIComponent(apiKey);
+  const promptText = useWebSearch
+    ? 'На зображенні — товар зі штрихкодом (автозапчастина). Знайди код/артикул під штрихкодом або поруч (цифри/буквено-цифровий код). Потім, якщо назва товару не видна прямо на етикетці, ПОШУКАЙ в інтернеті за цим кодом/артикулом (можеш пробувати з "Inter Cars", виробником з етикетки тощо), щоб визначити назву запчастини. Поверни ЛИШЕ JSON без пояснень і без markdown, рівно в такому форматі: {"code":"...","name":"..."}. Якщо код не видно — став порожній рядок для code. Якщо навіть після пошуку назву визначити не вдалось — став порожній рядок для name.'
+    : 'На зображенні — товар зі штрихкодом (автозапчастина). Знайди: 1) код/артикул під штрихкодом або поруч (цифри/буквено-цифровий код); 2) назву товару, якщо вона видна на етикетці (наприклад "Klocki hamulcowe", "Tarcza hamulcowa" тощо, мовою оригіналу). Поверни ЛИШЕ JSON без пояснень і без markdown, рівно в такому форматі: {"code":"...","name":"..."}. Якщо чогось не видно — став порожній рядок для цього поля.';
   const body = {
     contents: [{
       parts: [
-        { text: 'На зображенні — етикетка товару або ділянка біля штрихкоду. Витягни та поверни ЛИШЕ сам текст/код, який там надруковано (цифри, артикул, назву) — без пояснень, без лапок, без зайвих слів. Якщо тексту не видно, поверни порожній рядок.' },
+        { text: promptText },
         { inline_data: { mime_type: 'image/jpeg', data: base64 } }
       ]
     }]
   };
+  if(useWebSearch){
+    body.tools = [{ google_search: {} }];
+  }
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 20000); // 20с — далі точно щось не так
+  const timeoutMs = useWebSearch ? 35000 : 20000; // пошук в інтернеті займає довше
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   let res;
   try{
     res = await fetch(url, {
@@ -1730,7 +1764,7 @@ async function recognizeWithGemini(canvas, apiKey){
       signal: controller.signal
     });
   }catch(e){
-    if(e.name === 'AbortError') throw new Error('Немає відповіді за 20с — перевір інтернет-з\'єднання');
+    if(e.name === 'AbortError') throw new Error('Немає відповіді за ' + Math.round(timeoutMs/1000) + 'с — перевір інтернет-з\'єднання');
     throw new Error('Мережева помилка: ' + (e.message || 'спробуй ще раз'));
   }finally{
     clearTimeout(timeoutId);
@@ -1740,10 +1774,17 @@ async function recognizeWithGemini(canvas, apiKey){
     throw new Error('HTTP ' + res.status + (errText ? ': ' + errText.slice(0,120) : ''));
   }
   const data = await res.json();
-  const text = data && data.candidates && data.candidates[0] && data.candidates[0].content &&
+  const rawText = data && data.candidates && data.candidates[0] && data.candidates[0].content &&
     data.candidates[0].content.parts && data.candidates[0].content.parts[0] &&
     data.candidates[0].content.parts[0].text;
-  return (text || '').trim();
+  const cleaned = (rawText || '').trim().replace(/^```json\s*|\s*```$/g, '');
+  try{
+    const parsed = JSON.parse(cleaned);
+    return { code: (parsed.code || '').trim(), name: (parsed.name || '').trim() };
+  }catch(e){
+    // Gemini не повернув чистий JSON — трактуємо всю відповідь як код (стара поведінка)
+    return { code: cleaned, name: '' };
+  }
 }
 
 geminiBtn.onclick = async () => {
@@ -1759,19 +1800,26 @@ geminiBtn.onclick = async () => {
   const originalLabel = geminiBtn.textContent;
   geminiBtn.disabled = true;
   geminiBtn.textContent = 'Питаю Gemini…';
+  const useWebSearch = geminiWebSearchToggle.checked;
   // Сторожовий таймер на ВЕСЬ процес (не лише мережевий запит) — гарантує,
-  // що кнопка розблокується за 25с, хай навіть зависне якийсь інший крок.
+  // що кнопка розблокується, хай навіть зависне якийсь інший крок.
+  // Пошук в інтернеті займає довше за звичайне розпізнавання.
+  const watchdogMs = useWebSearch ? 40000 : 25000;
   const watchdog = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('Час очікування вичерпано (25с)')), 25000)
+    setTimeout(() => reject(new Error('Час очікування вичерпано (' + Math.round(watchdogMs/1000) + 'с)')), watchdogMs)
   );
   try{
-    const canvas = captureVideoFrameRaw(video);
-    const text = await Promise.race([recognizeWithGemini(canvas, apiKey), watchdog]);
-    if(!text){
+    const canvas = captureVideoFrameFull(video);
+    const result = await Promise.race([recognizeWithGemini(canvas, apiKey, useWebSearch), watchdog]);
+    if(!result.code && !result.name){
       showToast('Gemini не побачив тексту — спробуй ближче/чіткіше');
     }else{
-      input.value = text;
-      showToast('Розпізнано (Gemini): ' + text + ' — перевір і натисни "Створити код"');
+      if(result.code) input.value = result.code;
+      if(result.name) tagInput.value = result.name;
+      const parts = [];
+      if(result.code) parts.push('код: ' + result.code);
+      if(result.name) parts.push('назва: ' + result.name);
+      showToast('Gemini: ' + parts.join(', ') + ' — перевір і натисни "Створити код"');
       if(!$('continuousToggle').checked) stopScan();
     }
   }catch(e){
