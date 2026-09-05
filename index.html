@@ -199,6 +199,7 @@
     gap:10px;
   }
   .hist-item:last-child{border-bottom:none;}
+  .hist-item.pinned{background:var(--surface2); border-radius:10px; padding-left:8px; padding-right:8px;}
   .hist-text{
     font-size:15px;
     word-break:break-all;
@@ -492,7 +493,7 @@
     text-align:center;
   }
 
-  #session-summary-overlay{
+  #session-summary-overlay, #batch-overlay{
     position:fixed; inset:0;
     background:rgba(0,0,0,.6);
     display:none;
@@ -501,7 +502,7 @@
     z-index:65;
     padding:20px;
   }
-  #session-summary-overlay.show{display:flex;}
+  #session-summary-overlay.show, #batch-overlay.show{display:flex;}
   .session-summary-card{
     background:var(--surface);
     border-radius:16px;
@@ -528,6 +529,28 @@
     word-break:break-all;
   }
   .session-item:last-child{border-bottom:none;}
+
+  #photo-ocr-result-overlay{
+    position:fixed; inset:0;
+    background:rgba(0,0,0,.6);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:66;
+    padding:20px;
+  }
+  #photo-ocr-result-overlay.show{display:flex;}
+  .ocr-preview-wrap{
+    background:#fff;
+    border-radius:10px;
+    padding:8px;
+    margin-bottom:12px;
+    max-height:40vh;
+    overflow:auto;
+    display:flex;
+    justify-content:center;
+  }
+  .ocr-preview-wrap img{max-width:100%; height:auto; display:block;}
   .viewer-fallback span{font-size:14px; color:var(--text);}
   .viewer-fallback button{flex:none; padding:12px 24px;}
 
@@ -567,7 +590,8 @@
   }
   @media print{
     body *{ visibility:hidden; }
-    #barcode-render, #barcode-render *{ visibility:visible; }
+    #barcode-render, #barcode-render *,
+    #batchPrintContainer, #batchPrintContainer *{ visibility:visible; }
     #barcode-render{
       position:absolute;
       top:0; left:0;
@@ -577,6 +601,22 @@
       padding:20px;
     }
     #barcode-render svg{ max-width:90%; height:auto; }
+    #batchPrintContainer{
+      position:absolute;
+      top:0; left:0;
+      width:100%;
+      display:block !important;
+    }
+    .print-label{
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      padding:20px 0;
+      break-after:page;
+      page-break-after:always;
+    }
+    .print-label:last-child{break-after:auto; page-break-after:auto;}
+    .print-label svg{ max-width:90%; height:auto; }
   }
 </style>
 </head>
@@ -618,6 +658,7 @@
     </div>
     <div class="row">
       <button class="btn-secondary" id="photoScanBtn">🖼️ Скан з фото</button>
+      <button class="btn-secondary" id="batchBtn">📋 Пакетна генерація</button>
     </div>
     <input type="file" id="photoScanInput" accept="image/*" style="display:none;">
     <div id="barcode-wrap">
@@ -628,6 +669,7 @@
       </div>
       <div class="row">
         <button class="btn-secondary" id="printBtn">🖨️ Друк</button>
+        <button class="btn-secondary" id="copyCodeBtn">📋 Копіювати код</button>
       </div>
     </div>
   </div>
@@ -707,6 +749,20 @@
   </div>
 </div>
 
+<div id="batch-overlay">
+  <div class="session-summary-card">
+    <h3>Пакетна генерація</h3>
+    <p class="gemini-hint">По одному коду на рядок. Формат і розмір — ті самі, що обрані вище.</p>
+    <textarea id="batchInput" class="search-input" style="min-height:140px; resize:vertical;" placeholder="Код1&#10;Код2&#10;Код3…"></textarea>
+    <div class="row">
+      <button class="btn-primary" id="batchCreateBtn">Створити всі</button>
+      <button class="btn-secondary" id="batchCloseBtn">Закрити</button>
+    </div>
+  </div>
+</div>
+
+<div id="batchPrintContainer" style="display:none;"></div>
+
 <div id="photo-crop-overlay">
   <div class="viewer-bar">
     <span>Виділи ділянку з текстом/цифрами</span>
@@ -721,6 +777,20 @@
     <div class="row">
       <button class="btn-secondary" id="photoCropReset">Скинути</button>
       <button class="btn-primary" id="photoCropConfirm">Розпізнати</button>
+    </div>
+  </div>
+</div>
+
+<div id="photo-ocr-result-overlay">
+  <div class="session-summary-card">
+    <h3>Що бачив розпізнавач</h3>
+    <div class="ocr-preview-wrap">
+      <img id="photoOcrPreviewImg">
+    </div>
+    <input type="text" id="photoOcrResultInput" class="scan-confirm-input" placeholder="Розпізнаний текст (можна виправити)">
+    <div class="row">
+      <button class="btn-primary" id="photoOcrUseBtn">✓ Використати</button>
+      <button class="btn-secondary" id="photoOcrRetryBtn">↻ Виділити інакше</button>
     </div>
   </div>
 </div>
@@ -774,6 +844,43 @@ const toast = $('toast');
 
 const STORAGE_KEY = 'barcode128_history';
 let lastGenerated = { text: '', format: 'CODE128' };
+
+/* ---- Апаратний сканер (Bluetooth/USB, працює як клавіатура) ---- */
+// Коли головне поле в фокусі — сканер просто "друкує" код туди, і ми ловимо Enter.
+input.addEventListener('keydown', (e) => {
+  if(e.key === 'Enter'){
+    e.preventDefault(); // не додавати новий рядок у textarea
+    const text = input.value.trim();
+    if(text) generateBarcode(text, true, 'scanner');
+  }
+});
+
+// Якщо фокус НЕ в текстовому полі — ловимо швидкий "друк" глобально
+// (типова поведінка апаратних сканерів: набагато швидше за людський ввід).
+let scannerBuffer = '';
+let scannerLastKeyTime = 0;
+document.addEventListener('keydown', (e) => {
+  const active = document.activeElement;
+  const tag = active && active.tagName;
+  const isEditable = tag === 'INPUT' || tag === 'TEXTAREA' || (active && active.isContentEditable);
+  if(isEditable) return; // такі поля вже обробляються власними обробниками
+
+  const now = Date.now();
+  if(now - scannerLastKeyTime > 300) scannerBuffer = '';
+  scannerLastKeyTime = now;
+
+  if(e.key === 'Enter'){
+    if(scannerBuffer.length >= 3){
+      const code = scannerBuffer;
+      scannerBuffer = '';
+      input.value = code;
+      generateBarcode(code, true, 'scanner');
+      showToast('Сканер: ' + code);
+    }
+    return;
+  }
+  if(e.key.length === 1) scannerBuffer += e.key;
+});
 
 function showToast(msg){
   toast.textContent = msg;
@@ -836,6 +943,7 @@ function renderHistory(){
     ? list.map((item, i) => ({item, i})).filter(({item}) =>
         item.text.toLowerCase().includes(query) || (item.tag || '').toLowerCase().includes(query))
     : list.map((item, i) => ({item, i}));
+  filtered.sort((a, b) => (b.item.pinned ? 1 : 0) - (a.item.pinned ? 1 : 0));
 
   if(!list.length){
     historyEl.innerHTML = '<div class="empty">Поки що порожньо</div>';
@@ -846,13 +954,19 @@ function renderHistory(){
     return;
   }
   historyEl.innerHTML = filtered.map(({item, i}) => `
-    <div class="hist-item">
+    <div class="hist-item${item.pinned ? ' pinned' : ''}">
       <div>
-        <div class="hist-text">${escapeHtml(item.text)}</div>
-        <span class="hist-time">${item.source === 'scan' ? '📷 скан · ' : item.source === 'ocr' ? '🔤 OCR · ' : ''}${fmtTime(item.ts)}</span>
+        <div class="hist-text">${item.pinned ? '📌 ' : ''}${escapeHtml(item.text)}</div>
+        <span class="hist-time">${item.source === 'scan' ? '📷 скан · ' : item.source === 'ocr' ? '🔤 OCR · ' : item.source === 'scanner' ? '🔫 сканер · ' : item.source === 'batch' ? '📋 пакет · ' : ''}${fmtTime(item.ts)}</span>
         ${item.tag ? `<span class="hist-tag">${escapeHtml(item.tag)}</span>` : ''}
       </div>
       <div class="hist-actions">
+        <button class="icon-btn" onclick="copyHistoryItem(${i})" aria-label="Копіювати">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <button class="icon-btn" onclick="togglePinHistoryItem(${i})" aria-label="Закріпити">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="${item.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
+        </button>
         <button class="icon-btn" onclick="useHistoryItem(${i})" aria-label="Використати">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
         </button>
@@ -875,6 +989,26 @@ window.useHistoryItem = i => {
   tagInput.value = item.tag || '';
   formatSelect.value = item.format || 'CODE128';
   generateBarcode(item.text, false, 'manual', item.format, item.tag);
+};
+window.copyHistoryItem = async i => {
+  const list = loadHistory();
+  const item = list[i];
+  if(!item) return;
+  try{
+    await navigator.clipboard.writeText(item.text);
+    showToast('Скопійовано: ' + item.text);
+  }catch(e){
+    showToast('Не вдалося скопіювати');
+  }
+};
+window.togglePinHistoryItem = i => {
+  const list = loadHistory();
+  const item = list[i];
+  if(!item) return;
+  item.pinned = !item.pinned;
+  saveHistory(list);
+  renderHistory();
+  showToast(item.pinned ? 'Закріплено' : 'Відкріплено');
 };
 let pendingDelete = null;
 window.deleteHistoryItem = i => {
@@ -970,6 +1104,38 @@ $('importJsonInput').addEventListener('change', (e) => {
   reader.readAsText(file);
 });
 
+function renderCodeInto(container, text, format, w, h){
+  container.innerHTML = '';
+  if(format === 'QRCODE'){
+    const cellSize = Math.max(2, Math.round(w * 2));
+    let qr = null;
+    let qrErr = null;
+    for(let tn = 1; tn <= 40; tn++){
+      try{
+        const candidate = qrcode(tn, 'M');
+        candidate.addData(text);
+        candidate.make();
+        qr = candidate;
+        break;
+      }catch(e){ qrErr = e; }
+    }
+    if(!qr) throw new Error(qrErr ? 'текст занадто довгий для QR' : 'помилка генерації QR');
+    container.innerHTML = qr.createSvgTag(cellSize, cellSize);
+  }else{
+    const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    container.appendChild(svgEl);
+    JsBarcode(svgEl, text, {
+      format: format,
+      lineColor: '#000',
+      width: w,
+      height: h,
+      displayValue: true,
+      fontSize: 14,
+      margin: 8
+    });
+  }
+}
+
 function generateBarcode(text, addToHist=true, source='manual', formatOverride, tagOverride){
   if(!text || !text.trim()){
     showToast('Введіть текст');
@@ -980,36 +1146,8 @@ function generateBarcode(text, addToHist=true, source='manual', formatOverride, 
   const w = parseInt(widthRange.value, 10);
   const h = parseInt(heightRange.value, 10);
 
-  barcodeRender.innerHTML = '';
   try{
-    if(format === 'QRCODE'){
-      const cellSize = Math.max(2, Math.round(w * 2));
-      let qr = null;
-      let qrErr = null;
-      for(let tn = 1; tn <= 40; tn++){
-        try{
-          const candidate = qrcode(tn, 'M');
-          candidate.addData(text);
-          candidate.make();
-          qr = candidate;
-          break;
-        }catch(e){ qrErr = e; }
-      }
-      if(!qr) throw new Error(qrErr ? 'текст занадто довгий для QR' : 'помилка генерації QR');
-      barcodeRender.innerHTML = qr.createSvgTag(cellSize, cellSize);
-    }else{
-      const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      barcodeRender.appendChild(svgEl);
-      JsBarcode(svgEl, text, {
-        format: format,
-        lineColor: '#000',
-        width: w,
-        height: h,
-        displayValue: true,
-        fontSize: 14,
-        margin: 8
-      });
-    }
+    renderCodeInto(barcodeRender, text, format, w, h);
     barcodeWrap.classList.add('show');
     lastGenerated = { text, format };
     $('lookupRow').style.display = (format !== 'QRCODE') ? 'flex' : 'none';
@@ -1020,6 +1158,50 @@ function generateBarcode(text, addToHist=true, source='manual', formatOverride, 
 }
 
 $('genBtn').onclick = () => generateBarcode(input.value, true, 'manual');
+
+/* ---- Пакетна генерація ---- */
+$('batchBtn').onclick = () => {
+  $('batchInput').value = '';
+  $('batch-overlay').classList.add('show');
+};
+$('batchCloseBtn').onclick = () => $('batch-overlay').classList.remove('show');
+
+$('batchCreateBtn').onclick = () => {
+  const lines = $('batchInput').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if(!lines.length){ showToast('Встав хоча б один код'); return; }
+
+  const format = formatSelect.value;
+  const w = parseInt(widthRange.value, 10);
+  const h = parseInt(heightRange.value, 10);
+  const tag = tagInput.value.trim();
+
+  const container = $('batchPrintContainer');
+  container.innerHTML = '';
+  let created = 0;
+
+  lines.forEach(text => {
+    try{
+      const labelDiv = document.createElement('div');
+      labelDiv.className = 'print-label';
+      renderCodeInto(labelDiv, text, format, w, h);
+      const caption = document.createElement('div');
+      caption.textContent = text;
+      caption.style.cssText = 'font-size:12px;color:#000;margin-top:4px;';
+      labelDiv.appendChild(caption);
+      container.appendChild(labelDiv);
+      addHistory(text, 'batch', format, tag);
+      created++;
+    }catch(e){ /* пропускаємо некоректний рядок, продовжуємо решту */ }
+  });
+
+  $('batch-overlay').classList.remove('show');
+  if(created){
+    showToast(`Створено ${created} з ${lines.length} — відкриваю друк`);
+    setTimeout(() => window.print(), 300);
+  }else{
+    showToast('Жоден код не вдалося створити');
+  }
+};
 
 function svgToPngBlob(scale){
   return new Promise((resolve, reject) => {
@@ -1079,6 +1261,17 @@ $('shareBtn').onclick = async () => {
 $('printBtn').onclick = () => {
   if(!barcodeRender.querySelector('svg')){ showToast('Спершу створи код'); return; }
   window.print();
+};
+
+$('copyCodeBtn').onclick = async () => {
+  const code = lastGenerated.text;
+  if(!code){ showToast('Спершу створи код'); return; }
+  try{
+    await navigator.clipboard.writeText(code);
+    showToast('Скопійовано: ' + code);
+  }catch(e){
+    showToast('Не вдалося скопіювати');
+  }
 };
 
 $('lookupBtn').onclick = async () => {
@@ -1768,16 +1961,26 @@ $('photoCropConfirm').onclick = async () => {
     const worker = await getOcrWorker();
     const [resA, resB] = await Promise.all([worker.recognize(binarized), worker.recognize(grayscale)]);
     const best = (resA.data.confidence || 0) >= (resB.data.confidence || 0) ? resA : resB;
+    const bestCanvas = best === resA ? binarized : grayscale;
     const text = (best.data.text || '').replace(/\s+/g, ' ').trim();
-    if(text){
-      input.value = text;
-      showToast('OCR розпізнав: ' + text + ' — перевір і натисни "Створити код"');
-    }else{
-      showToast('Нічого не вдалося розпізнати у виділеній ділянці');
-    }
+    $('photoOcrPreviewImg').src = bestCanvas.toDataURL('image/png');
+    $('photoOcrResultInput').value = text;
+    $('photo-ocr-result-overlay').classList.add('show');
   }catch(err){
     showToast('Помилка розпізнавання: ' + (err && err.message ? err.message : 'спробуй ще раз'));
   }
+};
+
+$('photoOcrUseBtn').onclick = () => {
+  const text = $('photoOcrResultInput').value.trim();
+  if(!text){ showToast('Порожній текст'); return; }
+  input.value = text;
+  showToast('Використано: ' + text + ' — перевір і натисни "Створити код"');
+  $('photo-ocr-result-overlay').classList.remove('show');
+};
+$('photoOcrRetryBtn').onclick = () => {
+  $('photo-ocr-result-overlay').classList.remove('show');
+  openPhotoCrop(photoSourceCanvas);
 };
 
 let sessionItems = [];
@@ -1849,7 +2052,7 @@ function runAutoCleanup(){
   if(!days) return;
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
   const list = loadHistory();
-  const kept = list.filter(item => (item.ts || 0) >= cutoff);
+  const kept = list.filter(item => item.pinned || (item.ts || 0) >= cutoff);
   if(kept.length !== list.length){
     saveHistory(kept);
     showToast(`Автоочищення: видалено ${list.length - kept.length} старих записів`);
