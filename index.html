@@ -1853,8 +1853,21 @@ function openPhotoCrop(sourceCanvas){
   }else{
     previewDataUrl = sourceCanvas.toDataURL('image/jpeg', 0.9);
   }
-  $('photoCropImg').src = previewDataUrl;
+
+  const imgEl = $('photoCropImg');
+  // Форсуємо СПРАВЖНЄ перезавантаження зображення (проти глюку WebView, коли
+  // повторне присвоєння того самого src на той самий <img> не перемальовується
+  // і екран лишається чорним): спершу повністю прибираємо елемент з DOM,
+  // потім вставляємо назад на наступному кадрі.
+  imgEl.removeAttribute('src');
+  imgEl.style.display = 'none';
   $('photo-crop-overlay').classList.add('show');
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      imgEl.style.display = '';
+      imgEl.src = previewDataUrl;
+    });
+  });
 }
 function closePhotoCrop(){
   $('photo-crop-overlay').classList.remove('show');
