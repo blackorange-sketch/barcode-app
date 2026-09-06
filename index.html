@@ -635,6 +635,9 @@
       <button class="btn-secondary" id="lookupBtn">🔍 intercars.pl</button>
       <button class="btn-secondary" id="googleLookupBtn">🔍 Google</button>
     </div>
+    <div class="row" id="geminiLookupRow" style="display:none;">
+      <button class="btn-secondary" id="geminiLookupBtn">🤖 Знайти назву (Gemini)</button>
+    </div>
 
     <div class="field-label"><span>Формат</span></div>
     <select id="formatSelect">
@@ -780,7 +783,10 @@
     <span class="photo-crop-hint">Обведи пальцем потрібну частину (або залиш без виділення — обробиться все фото)</span>
     <div class="row">
       <button class="btn-secondary" id="photoCropReset">Скинути</button>
-      <button class="btn-primary" id="photoCropConfirm">Розпізнати</button>
+      <button class="btn-primary" id="photoCropConfirm">Розпізнати (OCR)</button>
+    </div>
+    <div class="row">
+      <button class="btn-secondary" id="photoCropGeminiBtn" style="display:none; flex:1;">🤖 Розпізнати через Gemini AI</button>
     </div>
   </div>
 </div>
@@ -1301,6 +1307,37 @@ $('googleLookupBtn').onclick = () => {
   window.open(url, '_blank');
 };
 
+$('geminiLookupBtn').onclick = async () => {
+  const code = lastGenerated.text;
+  if(!code){ showToast('Спершу створи код'); return; }
+  const apiKey = (localStorage.getItem(GEMINI_KEY_STORAGE) || '').trim();
+  if(!apiKey){ showToast('Спершу встав Gemini API-ключ у налаштуваннях'); return; }
+
+  const btn = $('geminiLookupBtn');
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Шукаю…';
+
+  const watchdog = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Час очікування вичерпано (40с)')), 40000)
+  );
+
+  try{
+    const name = await Promise.race([lookupNameWithGemini(code, apiKey), watchdog]);
+    if(!name){
+      showToast('Gemini не зміг визначити назву для цього коду');
+    }else{
+      tagInput.value = name;
+      showToast('Знайдено: ' + name);
+    }
+  }catch(e){
+    showToast('Помилка Gemini: ' + (e && e.message ? e.message : 'спробуй ще раз'));
+  }finally{
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+};
+
 let viewerFallbackTimer = null;
 function openViewer(url){
   const frame = $('viewer-frame');
@@ -1710,11 +1747,17 @@ function loadGeminiKey(){
   const key = localStorage.getItem(GEMINI_KEY_STORAGE) || '';
   geminiKeyInput.value = key;
   geminiBtn.style.display = key ? 'block' : 'none';
+  const photoCropGeminiBtn = $('photoCropGeminiBtn');
+  if(photoCropGeminiBtn) photoCropGeminiBtn.style.display = key ? 'block' : 'none';
+  $('geminiLookupRow').style.display = key ? 'flex' : 'none';
 }
 geminiKeyInput.addEventListener('input', () => {
   const key = geminiKeyInput.value.trim();
   localStorage.setItem(GEMINI_KEY_STORAGE, key);
   geminiBtn.style.display = key ? 'block' : 'none';
+  const photoCropGeminiBtn = $('photoCropGeminiBtn');
+  if(photoCropGeminiBtn) photoCropGeminiBtn.style.display = key ? 'block' : 'none';
+  $('geminiLookupRow').style.display = key ? 'flex' : 'none';
 });
 loadGeminiKey();
 
@@ -1784,6 +1827,50 @@ async function recognizeWithGemini(canvas, apiKey, useWebSearch){
   }catch(e){
     // Gemini не повернув чистий JSON — трактуємо всю відповідь як код (стара поведінка)
     return { code: cleaned, name: '' };
+  }
+}
+
+// Текстовий (без фото) пошук назви товару за вже наявним кодом — для ручного
+// вводу, історії чи вже згенерованого коду. Пошук в інтернеті увімкнено завжди,
+// бо без нього текстовий запит без зображення взагалі не має сенсу.
+async function lookupNameWithGemini(code, apiKey){
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=' + encodeURIComponent(apiKey);
+  const promptText = 'Це код/артикул автозапчастини: "' + code + '". Пошукай в інтернеті (спробуй разом з "Inter Cars", назвами відомих виробників автозапчастин тощо) і визнач назву цієї запчастини. Поверни ЛИШЕ JSON без пояснень і без markdown, рівно в такому форматі: {"name":"..."}. Якщо визначити не вдалось — став порожній рядок.';
+  const body = {
+    contents: [{ parts: [{ text: promptText }] }],
+    tools: [{ google_search: {} }]
+  };
+  const controller = new AbortController();
+  const timeoutMs = 35000;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  let res;
+  try{
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+  }catch(e){
+    if(e.name === 'AbortError') throw new Error('Немає відповіді за ' + Math.round(timeoutMs/1000) + 'с — перевір інтернет-з\'єднання');
+    throw new Error('Мережева помилка: ' + (e.message || 'спробуй ще раз'));
+  }finally{
+    clearTimeout(timeoutId);
+  }
+  if(!res.ok){
+    const errText = await res.text().catch(()=> '');
+    throw new Error('HTTP ' + res.status + (errText ? ': ' + errText.slice(0,120) : ''));
+  }
+  const data = await res.json();
+  const rawText = data && data.candidates && data.candidates[0] && data.candidates[0].content &&
+    data.candidates[0].content.parts && data.candidates[0].content.parts[0] &&
+    data.candidates[0].content.parts[0].text;
+  const cleaned = (rawText || '').trim().replace(/^```json\s*|\s*```$/g, '');
+  try{
+    const parsed = JSON.parse(cleaned);
+    return (parsed.name || '').trim();
+  }catch(e){
+    return cleaned; // якщо не JSON — повертаємо як є
   }
 }
 
@@ -2010,8 +2097,7 @@ $('photoCropReset').onclick = () => {
   stage.addEventListener('pointercancel', finishDrag);
 })();
 
-$('photoCropConfirm').onclick = async () => {
-  if(!photoSourceCanvas) return;
+function getEffectivePhotoCropRect(){
   const sw0 = photoSourceCanvas.width, sh0 = photoSourceCanvas.height;
   let sx, sy, sw, sh;
   if(cropSelection && cropSelection.x1 > cropSelection.x0 && cropSelection.y1 > cropSelection.y0){
@@ -2028,6 +2114,12 @@ $('photoCropConfirm').onclick = async () => {
   }
   const targetW = Math.min(1400, Math.round(sw * 3));
   const targetH = Math.round(targetW * (sh / sw));
+  return { sx, sy, sw, sh, targetW, targetH };
+}
+
+$('photoCropConfirm').onclick = async () => {
+  if(!photoSourceCanvas) return;
+  const { sx, sy, sw, sh, targetW, targetH } = getEffectivePhotoCropRect();
 
   closePhotoCrop();
   showToast('Розпізнаю…');
@@ -2076,6 +2168,49 @@ $('photoOcrUseBtn').onclick = () => {
 $('photoOcrRetryBtn').onclick = () => {
   $('photo-ocr-result-overlay').classList.remove('show');
   openPhotoCrop(photoSourceCanvas);
+};
+
+$('photoCropGeminiBtn').onclick = async () => {
+  if(!photoSourceCanvas) return;
+  const apiKey = (localStorage.getItem(GEMINI_KEY_STORAGE) || '').trim();
+  if(!apiKey){ showToast('Спершу встав Gemini API-ключ у налаштуваннях'); return; }
+
+  const { sx, sy, sw, sh, targetW, targetH } = getEffectivePhotoCropRect();
+  const rawCrop = document.createElement('canvas');
+  rawCrop.width = targetW; rawCrop.height = targetH;
+  rawCrop.getContext('2d').drawImage(photoSourceCanvas, sx, sy, sw, sh, 0, 0, targetW, targetH);
+
+  const btn = $('photoCropGeminiBtn');
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Питаю Gemini…';
+
+  const useWebSearch = geminiWebSearchToggle.checked;
+  const watchdogMs = useWebSearch ? 40000 : 25000;
+  const watchdog = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Час очікування вичерпано (' + Math.round(watchdogMs/1000) + 'с)')), watchdogMs)
+  );
+
+  try{
+    const result = await Promise.race([recognizeWithGemini(rawCrop, apiKey, useWebSearch), watchdog]);
+    if(!result.code && !result.name){
+      showToast('Gemini не побачив тексту — спробуй виділити інакше');
+    }else{
+      closePhotoCrop();
+      if(navigator.vibrate) navigator.vibrate(150);
+      if(result.code) input.value = result.code;
+      if(result.name) tagInput.value = result.name;
+      const parts = [];
+      if(result.code) parts.push('код: ' + result.code);
+      if(result.name) parts.push('назва: ' + result.name);
+      showToast('Gemini: ' + parts.join(', ') + ' — перевір і натисни "Створити код"');
+    }
+  }catch(e){
+    showToast('Помилка Gemini: ' + (e && e.message ? e.message : 'спробуй ще раз'));
+  }finally{
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
 };
 
 let sessionItems = [];
