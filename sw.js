@@ -1,4 +1,4 @@
-const CACHE = 'barcode128-v5';
+const CACHE = 'barcode128-v6';
 const ASSETS = [
   './',
   './index.html',
