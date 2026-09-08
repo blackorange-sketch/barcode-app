@@ -934,11 +934,27 @@ const toast = $('toast');
 /* ---- Прийом даних через "Поділитися" з інших застосунків (Share Target) ---- */
 (function handleSharedData(){
   const params = new URLSearchParams(window.location.search);
-  const sharedText = params.get('shared_text') || params.get('shared_title') || params.get('shared_url');
-  if(sharedText && sharedText.trim()){
-    input.value = sharedText.trim();
-    showToast('Отримано через "Поділитися": ' + sharedText.trim());
-    // Прибираємо параметри з адресного рядка, щоб не підставлялись повторно при оновленні сторінки
+  // Перевіряємо всі можливі варіанти назв параметрів — різні реалізації
+  // Share Target (Android/TWA) можуть використовувати як наші кастомні імена
+  // з manifest.json ("shared_text"), так і "сирі" стандартні ("text", "title", "url").
+  const candidates = [
+    'shared_text', 'text',
+    'shared_title', 'title',
+    'shared_url', 'url'
+  ];
+  let sharedText = '';
+  for(const key of candidates){
+    const v = params.get(key);
+    if(v && v.trim()){ sharedText = v.trim(); break; }
+  }
+  if(sharedText){
+    input.value = sharedText;
+    showToast('Отримано через "Поділитися": ' + sharedText);
+    history.replaceState(null, '', window.location.pathname);
+  }else if(params.toString()){
+    // Дані таки прийшли, але жоден з очікуваних ключів не збігся —
+    // показуємо сирий запит, щоб можна було побачити реальні назви параметрів.
+    showToast('Отримано параметри: ' + params.toString());
     history.replaceState(null, '', window.location.pathname);
   }
 })();
