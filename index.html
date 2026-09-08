@@ -56,11 +56,25 @@
   }
   main{
     flex:1;
-    padding:12px 20px 100px;
+    padding:12px 20px calc(84px + env(safe-area-inset-bottom));
     display:flex;
     flex-direction:column;
     gap:16px;
     overflow-y:auto;
+  }
+  .tab-panel{
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+  }
+  #tabBar{
+    position:fixed;
+    left:0; right:0; bottom:0;
+    display:flex;
+    background:var(--surface);
+    border-top:1px solid var(--surface2);
+    padding-bottom:env(safe-area-inset-bottom);
+    z-index:40;
   }
   .card{
     background:var(--surface);
@@ -84,6 +98,27 @@
   }
   textarea{min-height:52px;}
   textarea::placeholder, input::placeholder{color:var(--muted);}
+  .input-wrap{position:relative;}
+  .input-wrap textarea{padding-right:44px;}
+  .paste-btn{
+    position:absolute;
+    top:8px;
+    right:8px;
+    width:30px;
+    height:30px;
+    min-width:30px;
+    max-width:30px;
+    padding:0;
+    flex:none;
+    background:var(--surface);
+    color:var(--muted);
+    border-radius:8px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    -webkit-appearance:none;
+    appearance:none;
+  }
   .row{display:flex; gap:10px; margin-top:12px;}
   .field-label{
     font-size:12px;
@@ -166,6 +201,24 @@
   .btn-primary{background:var(--accent); color:var(--accent-text);}
   .btn-secondary{background:var(--surface2); color:var(--text);}
   .btn-danger{background:transparent; color:var(--danger);}
+  .tab-btn{
+    flex:1;
+    background:none;
+    border:none;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:3px;
+    padding:10px 4px 8px;
+    color:var(--muted);
+    font-size:11px;
+    font-weight:500;
+    border-radius:0;
+    -webkit-appearance:none;
+    appearance:none;
+  }
+  .tab-btn.active{color:var(--text); font-weight:600;}
+  .tab-btn:active{opacity:.7;}
   #barcode-wrap{
     background:#fff;
     border-radius:12px;
@@ -627,8 +680,14 @@
 </header>
 
 <main>
+  <section class="tab-panel" id="tab-create">
   <div class="card">
-    <textarea id="input" placeholder="Введіть текст…" rows="2"></textarea>
+    <div class="input-wrap">
+      <textarea id="input" placeholder="Введіть текст…" rows="2"></textarea>
+      <button type="button" id="pasteBtn" class="paste-btn" aria-label="Вставити з буфера">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+    </div>
     <input type="text" id="tagInput" class="tag-input" placeholder="Тег (необов'язково) — напр. робота, дім">
 
     <div class="row" id="lookupRow" style="display:none;">
@@ -659,10 +718,13 @@
       <button class="btn-primary" id="genBtn">Створити код</button>
       <button class="btn-secondary" id="scanBtn">📷 Сканувати</button>
     </div>
-    <div class="row">
-      <button class="btn-secondary" id="photoScanBtn">🖼️ Скан з фото</button>
-      <button class="btn-secondary" id="batchBtn">📋 Пакетна генерація</button>
-    </div>
+    <details class="size-settings">
+      <summary>Ще способи</summary>
+      <div class="row" style="margin-top:0;">
+        <button class="btn-secondary" id="photoScanBtn">🖼️ Скан з фото</button>
+        <button class="btn-secondary" id="batchBtn">📋 Пакетна генерація</button>
+      </div>
+    </details>
     <input type="file" id="photoScanInput" accept="image/*" style="display:none;">
     <div id="barcode-wrap">
       <div id="barcode-render"></div>
@@ -676,27 +738,28 @@
       </div>
     </div>
   </div>
+  </section>
 
+  <section class="tab-panel" id="tab-history" style="display:none;">
   <div class="card">
-    <details class="size-settings" id="historyDetails">
-      <summary>Історія <span id="histCountBadge" class="hist-count-badge"></span></summary>
-      <div class="section-title" style="margin-top:6px; flex-wrap:wrap; row-gap:8px;">
-        <span></span>
-        <div class="actions">
-          <span id="exportHist">CSV</span>
-          <span id="exportJson">JSON ↓</span>
-          <span id="importJson">JSON ↑</span>
-          <span id="clearHist">Очистити</span>
-        </div>
+    <div class="section-title">
+      <span>Історія <span id="histCountBadge" class="hist-count-badge"></span></span>
+      <div class="actions">
+        <span id="exportHist">CSV</span>
+        <span id="exportJson">JSON ↓</span>
+        <span id="importJson">JSON ↑</span>
+        <span id="clearHist">Очистити</span>
       </div>
-      <input type="file" id="importJsonInput" accept="application/json" style="display:none;">
-      <input type="text" id="historySearch" class="search-input" placeholder="Пошук в історії (текст або тег)…">
-      <div id="history"></div>
-    </details>
+    </div>
+    <input type="file" id="importJsonInput" accept="application/json" style="display:none;">
+    <input type="text" id="historySearch" class="search-input" placeholder="Пошук в історії (текст або тег)…">
+    <div id="history"></div>
   </div>
+  </section>
 
+  <section class="tab-panel" id="tab-settings" style="display:none;">
   <div class="card">
-    <details class="size-settings">
+    <details class="size-settings" open>
       <summary>🤖 AI-розпізнавання (Gemini)</summary>
       <p class="gemini-hint">
         Точніше за вбудований OCR, але потребує інтернету й твого власного
@@ -712,7 +775,7 @@
   </div>
 
   <div class="card">
-    <details class="size-settings">
+    <details class="size-settings" open>
       <summary>🧹 Автоочищення історії</summary>
       <p class="gemini-hint">Записи старіші за обраний період видалятимуться автоматично при відкритті застосунку.</p>
       <select id="autoCleanupSelect">
@@ -723,7 +786,23 @@
       </select>
     </details>
   </div>
+  </section>
 </main>
+
+<nav id="tabBar">
+  <button class="tab-btn active" data-tab="tab-create">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+    <span>Створити</span>
+  </button>
+  <button class="tab-btn" data-tab="tab-history">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+    <span>Історія</span>
+  </button>
+  <button class="tab-btn" data-tab="tab-settings">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    <span>Налаштування</span>
+  </button>
+</nav>
 
 <div id="scan-overlay">
   <div class="scan-bar">
@@ -851,6 +930,29 @@ const barcodeWrap = $('barcode-wrap');
 const barcodeRender = $('barcode-render');
 const historyEl = $('history');
 const toast = $('toast');
+
+/* ---- Прийом даних через "Поділитися" з інших застосунків (Share Target) ---- */
+(function handleSharedData(){
+  const params = new URLSearchParams(window.location.search);
+  const sharedText = params.get('shared_text') || params.get('shared_title') || params.get('shared_url');
+  if(sharedText && sharedText.trim()){
+    input.value = sharedText.trim();
+    showToast('Отримано через "Поділитися": ' + sharedText.trim());
+    // Прибираємо параметри з адресного рядка, щоб не підставлялись повторно при оновленні сторінки
+    history.replaceState(null, '', window.location.pathname);
+  }
+})();
+
+$('pasteBtn').onclick = async () => {
+  try{
+    const text = await navigator.clipboard.readText();
+    if(!text || !text.trim()){ showToast('Буфер обміну порожній'); return; }
+    input.value = text.trim();
+    showToast('Вставлено з буфера');
+  }catch(e){
+    showToast('Немає доступу до буфера обміну');
+  }
+};
 
 const STORAGE_KEY = 'barcode128_history';
 let lastGenerated = { text: '', format: 'CODE128' };
@@ -2291,6 +2393,18 @@ function runAutoCleanup(){
 
 runAutoCleanup();
 renderHistory();
+
+/* ---- Перемикання вкладок ---- */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const targetId = btn.dataset.tab;
+    document.querySelectorAll('.tab-panel').forEach(panel => {
+      panel.style.display = (panel.id === targetId) ? 'flex' : 'none';
+    });
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelector('main').scrollTop = 0;
+  });
+});
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => {
