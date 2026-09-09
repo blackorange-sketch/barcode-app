@@ -1358,12 +1358,29 @@ function svgToPngBlob(scale){
   });
 }
 
+function blobToBase64(blob){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 $('saveImgBtn').onclick = async () => {
   try{
     const blob = await svgToPngBlob(8);
+    const filename = 'barcode-' + Date.now() + '.png';
+    if(window.AndroidBridge && window.AndroidBridge.saveImage){
+      // Звичайний WebView не тягне blob-завантаження сам — передаємо файл
+      // напряму в нативний Android-код через міст.
+      const base64 = await blobToBase64(blob);
+      window.AndroidBridge.saveImage(base64, filename);
+      return;
+    }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'barcode-' + Date.now() + '.png';
+    a.download = filename;
     a.click();
   }catch(e){
     showToast('Спершу створи код');
@@ -1373,6 +1390,13 @@ $('saveImgBtn').onclick = async () => {
 $('shareBtn').onclick = async () => {
   try{
     const blob = await svgToPngBlob(8);
+    if(window.AndroidBridge && window.AndroidBridge.shareImage){
+      // navigator.share() не існує в звичайному WebView — через міст
+      // відкриваємо справжнє системне меню "Поділитися" Android.
+      const base64 = await blobToBase64(blob);
+      window.AndroidBridge.shareImage(base64, lastGenerated.text);
+      return;
+    }
     const file = new File([blob], 'barcode-' + Date.now() + '.png', {type:'image/png'});
     if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
       await navigator.share({ files:[file], title: 'Barcode', text: lastGenerated.text });
@@ -1388,7 +1412,13 @@ $('shareBtn').onclick = async () => {
 
 $('printBtn').onclick = () => {
   if(!barcodeRender.querySelector('svg')){ showToast('Спершу створи код'); return; }
-  window.print();
+  if(window.AndroidBridge && window.AndroidBridge.printPage){
+    // window.print() нічого не робить у звичайному WebView без нативної
+    // обробки — викликаємо системний друк Android напряму через міст.
+    window.AndroidBridge.printPage();
+  }else{
+    window.print();
+  }
 };
 
 $('copyCodeBtn').onclick = async () => {
