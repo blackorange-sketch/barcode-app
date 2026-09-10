@@ -46,7 +46,13 @@ class MainActivity : AppCompatActivity() {
         webView.settings.domStorageEnabled = true
         webView.settings.mediaPlaybackRequiresUserGesture = false
         webView.settings.cacheMode = WebSettings.LOAD_DEFAULT
-        webView.settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        webView.settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+
+        // За замовчуванням Android WebView додає позначку "; wv" у User-Agent —
+        // деякі важкі сайти (як intercars.pl) визначають це й віддають спрощену/
+        // непрацездатну версію сторінки без CSS/JS. Підміняємо на звичайний Chrome UA.
+        webView.settings.userAgentString = "Mozilla/5.0 (Linux; Android 13; Pixel 7) " +
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
 
         // Міст між JS і Android: navigator.share()/window.print()/завантаження
         // blob-файлів НЕ працюють у звичайному WebView (на відміну від Chrome/TWA) —
