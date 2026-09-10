@@ -12,6 +12,7 @@ import android.print.PrintAttributes
 import android.print.PrintManager
 import android.provider.MediaStore
 import android.util.Base64
+import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
@@ -53,6 +54,13 @@ class MainActivity : AppCompatActivity() {
         // непрацездатну версію сторінки без CSS/JS. Підміняємо на звичайний Chrome UA.
         webView.settings.userAgentString = "Mozilla/5.0 (Linux; Android 13; Pixel 7) " +
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+
+        // Звичайний WebView за замовчуванням блокує СТОРОННІ кукі — на відміну
+        // від Chrome/TWA. intercars.pl відкривається у нас у вкладеному iframe,
+        // тож для нього це "сторонній" контекст: без цього дозволу сайт не може
+        // тримати сесію/стан і показує "сирий" HTML без повного інтерфейсу.
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
         // Міст між JS і Android: navigator.share()/window.print()/завантаження
         // blob-файлів НЕ працюють у звичайному WebView (на відміну від Chrome/TWA) —
